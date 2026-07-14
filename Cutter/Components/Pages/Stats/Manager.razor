@@ -1,0 +1,315 @@
+﻿@page "/stats/manager"
+@attribute [Authorize(Roles = "Manager, AdminSuper")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Cutter.Data
+@using Newtonsoft.Json
+@inject ApplicationDbContext Db
+@rendermode InteractiveServer
+
+<PageTitle>Статистика — Менеджер</PageTitle>
+
+<div class="container py-4">
+    <h2>📈 Статистика по пользователям</h2>
+
+    <!-- Панель фильтров -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text">С</span>
+                <InputDate @bind-Value="StartDate" class="form-control" />
+                <span class="input-group-text">по</span>
+                <InputDate @bind-Value="EndDate" class="form-control" />
+                <button class="btn btn-outline-secondary" @onclick="LoadData">Применить</button>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("Week") )">Неделя</button>
+                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("Month") )">Месяц</button>
+                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("HalfYear") )">Полгода</button>
+                <button type="button" class="btn btn-outline-secondary" @onclick="ResetFilters">Сбросить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Фильтр по пользователю -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <label for="userFilter" class="form-label">Фильтр по пользователю:</label>
+            <select id="userFilter"
+                    class="form-select"
+                    @bind="SelectedUserId"
+                    @bind:after="LoadData">
+                <option value="">Все пользователи</option>
+                @foreach (var user in allUsers)
+                {
+                    <option value="@user.Id">@user.UserName</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <!-- Общая сводка -->
+    @if (userStats.Any())
+    {
+        <div class="alert alert-info mb-4">
+            <strong>Период:</strong> @StartDate.ToString("dd.MM.yyyy") — @EndDate.ToString("dd.MM.yyyy")<br />
+            @if (!string.IsNullOrEmpty(SelectedUserId))
+            {
+                <strong>Пользователь:</strong> @userStats.First().UserName
+
+                <br />
+            }
+            <strong>Пользователей:</strong> @userStats.Count<br />
+            <strong>Общее количество резов:</strong> @userStats.Sum(u => u.TotalCuts)<br />
+            <strong>Общая стоимость:</strong> <span class="fw-bold">@grandTotalSum.ToString("N2") ₽</span>
+        </div>
+    }
+
+    <!-- Таблица по пользователям -->
+    <div class="table-responsive">
+        @if (isLoading)
+        {
+            <div class="text-center py-5">Загрузка...</div>
+        }
+        else if (!userStats.Any())
+        {
+            <div class="alert alert-warning text-center">Нет данных за выбранный период</div>
+        }
+        else
+        {
+            @foreach (var userStat in userStats)
+            {
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">@userStat.UserName</h5>
+                        <div>
+                            <span class="badge bg-light text-dark me-2">Выходов: @userStat.WorkDaysCount</span>
+                            <span class="badge bg-warning text-dark">Резов: @userStat.TotalCuts</span>
+                            <span class="badge bg-danger">@(((double)userStat.TotalCuts / userStats.Sum(u => u.TotalCuts)).ToString("P1"))</span>
+                            <span class="badge bg-success">Сумма: @userStat.TotalSum.ToString("N2") ₽</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Дата</th>
+                                    <th>Резов</th>
+                                    <th>Сумма</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var day in userStat.DailyStats)
+                                {
+                                    <tr>
+                                        <td>@day.Date.ToString("dd.MM.yyyy")</td>
+                                        <td>@day.Cuts</td>
+                                        <td class="fw-bold">@day.Sum.ToString("N2") ₽</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            <!-- Общий итог -->
+            <div class="card mt-4">
+                <div class="card-body bg-light">
+                    <h4 class="mb-0">Итого по всем пользователям:</h4>
+                    <hr />
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>Всего резов:</strong> @userStats.Sum(u => u.TotalCuts)
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Всего выходов:</strong> @userStats.Sum(u => u.WorkDaysCount)
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Общая сумма:</strong> <span class="fw-bold fs-5">@grandTotalSum.ToString("N2") ₽</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private DateTime StartDate { get; set; }
+    private DateTime EndDate { get; set; }
+    private string SelectedUserId { get; set; } = ""; // ID выбранного пользователя
+    private bool isLoading = true;
+
+    private class DailyStat
+    {
+        public DateTime Date { get; set; }
+        public int Cuts { get; set; }
+        public double Sum { get; set; }
+    }
+
+    private class UserStat
+    {
+        public string UserName { get; set; } = "—";
+        public List<DailyStat> DailyStats { get; set; } = new();
+        public int TotalCuts => DailyStats.Sum(d => d.Cuts);
+        public double TotalSum => DailyStats.Sum(d => d.Sum);
+        public int WorkDaysCount => DailyStats.Count;
+    }
+
+    private List<UserStat> userStats = new();
+    private double grandTotalSum => userStats.Sum(u => u.TotalSum);
+
+    // Список всех пользователей для фильтра
+    private List<ApplicationUser> allUsers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        EndDate = DateTime.Now;
+        StartDate = EndDate.AddMonths(-1);
+
+        // Загружаем список пользователей
+        await LoadUsers();
+
+        // Загружаем данные
+        await LoadData();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            allUsers = await Db.Users
+                .OrderBy(u => u.UserName)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка загрузки пользователей: {ex.Message}");
+            allUsers = new();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var query = Db.CutPlan
+                .Include(cp => cp.User)
+                .Where(cp => cp.CreateDate >= StartDate && cp.CreateDate <= EndDate.Date.AddDays(1).AddTicks(-1));
+
+            // Применяем фильтр по пользователю, если выбран
+            if (!string.IsNullOrEmpty(SelectedUserId))
+            {
+                query = query.Where(cp => cp.UserId == SelectedUserId);
+            }
+
+            var cutPlans = await query.ToListAsync();
+
+            var rawData = new List<(string UserName, DateTime Date, int Cuts, double Sum)>();
+
+            foreach (var cp in cutPlans)
+            {
+                if (string.IsNullOrWhiteSpace(cp.CuttingPlan)) continue;
+
+                List<CuttingPlan>? planList;
+                try
+                {
+                    planList = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (planList == null) continue;
+
+                double totalSum = 0;
+                int totalCuts = 0;
+
+                foreach (var plan in planList)
+                {
+                    totalCuts += plan.TotalCuts;
+
+                    if (plan.SheetLayouts != null)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            totalSum += layout.Sheet.Quantity * layout.Sheet.Price;
+                        }
+                    }
+                }
+
+                rawData.Add((
+                    UserName: cp.User?.UserName ?? "—",
+                    Date: cp.CreateDate.Date,
+                    Cuts: totalCuts,
+                    Sum: totalSum
+                ));
+            }
+
+            userStats = rawData
+                .GroupBy(x => x.UserName)
+                .Select(g => new UserStat
+                    {
+                        UserName = g.Key,
+                        DailyStats = g
+                            .GroupBy(x => x.Date)
+                            .Select(dg => new DailyStat
+                            {
+                                Date = dg.Key,
+                                Cuts = dg.Sum(x => x.Cuts),
+                                Sum = dg.Sum(x => x.Sum)
+                            })
+                            .OrderBy(x => x.Date)
+                            .ToList()
+                    })
+                .OrderByDescending(u => u.TotalSum)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка загрузки: {ex.Message}");
+            userStats = new();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetDateRange(string range)
+    {
+        var now = DateTime.Now;
+        EndDate = now;
+        StartDate = range switch
+        {
+            "Week" => now.AddDays(-7),
+            "Month" => now.AddMonths(-1),
+            "HalfYear" => now.AddMonths(-6),
+            _ => now.AddMonths(-1)
+        };
+        _ = LoadData();
+    }
+
+    private void ResetFilters()
+    {
+        EndDate = DateTime.Now;
+        StartDate = EndDate.AddMonths(-1);
+        SelectedUserId = ""; // Сбрасываем фильтр пользователя
+        _ = LoadData();
+    }
+
+    private double CalculatePercentage(int value, int total)
+{
+    if (total == 0) return 0;
+    return Math.Round((double)value * 100 / total, 1); // 1 знак после запятой
+}
+        
+}

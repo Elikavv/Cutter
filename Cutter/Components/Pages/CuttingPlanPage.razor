@@ -1,0 +1,819 @@
+﻿@page "/cutting-plan/{HashId}"
+@using Cutter.Data
+@using Cutter.Services
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authorization
+@inject NavigationManager NavigationManager
+@inject ThreeJSInterop ThreeJS
+@inject CuttingState State
+@inject CuttingService CuttingService
+@implements IDisposable
+@attribute [Authorize]
+
+@rendermode InteractiveServer
+
+<div class="cutting-area">
+    <div class="container-fluid mt-3">
+        @if (ResultPlan == null)
+        {
+            <div class="alert alert-danger">
+                <h4>Данные не загружены</h4>
+                <p>Результаты раскроя не найдены. Пожалуйста, выполните расчет сначала.</p>
+                <button @onclick="NavigateToIndex" class="btn btn-primary">
+                    Вернуться к расчету
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="row mb-1">
+                <div class="col-12">
+                    <h2>Результаты раскроя # @ResultPlan.NumCut</h2>
+                    @if(!string.IsNullOrEmpty(ResultPlan.Invoice))
+                    {
+                        <h3>Договор № @ResultPlan.Invoice</h3>
+                    }
+
+                    <ul class="nav nav-tabs" id="viewTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(ActiveTab == "2d" ? "active" : "")" 
+                            @onclick='() => SwitchTab("2d")'>
+                                2D Вид
+                            </button>
+                        </li>
+                        @*<li class="nav-item" role="presentation">
+                        <button class="nav-link @(ActiveTab == "3d" ? "active" : "")" 
+                        @onclick='() => SwitchTab("3d")'>
+                            3D Вид
+                        </button>
+                    </li>*@
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(ActiveTab == "stats" ? "active" : "")" 
+                            @onclick='() => SwitchTab("stats")'>
+                                Статистика
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <div class="row">
+                            @*<div class="col-md-4">
+                            <strong>Листов использовано:</strong> @ResultPlan.SheetLayouts.Where(x => !x.IsEmpty).Count()
+                        </div>*@
+                            <div class="mb-2">
+                                <div class="col-md-4">
+                                    <strong>Лист:</strong> @CurrentLayout.Sheet.Name
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Размер:</strong> @CurrentLayout.Sheet.Length x @CurrentLayout.Sheet.Width mm
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Артикул:</strong> @CurrentLayout.Sheet.SKU
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Использование материала:</strong> @(CurrentLayout.MaterialUsage.ToString("P1"))
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Всего деталей:</strong> @(CurrentLayout.Details.Count)
+                            </div>
+                            <div class="col-md-4">
+                                @if(State.ListPlan.FirstOrDefault(x => x.SheetLayouts.Any(z => z.Sheet?.Uid == CurrentLayout.Sheet.Uid))?.UnplacedDetails.Count > 0)
+                                {
+                                    <span class="text-danger">
+                                        <strong>Не размещено деталей:</strong> 
+                                        @State.ListPlan.Where(x => x.SheetLayouts.Any(z => z.Sheet?.Uid == CurrentLayout.Sheet.Uid)).Select(x => x.UnplacedDetails.Count).FirstOrDefault()
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-success">
+                                        <strong>Все детали размещены</strong>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <button @onclick="NavigateToIndex" class="btn btn-primary">
+                        <i class="fas fa-arrow-left"></i> Новый расчет
+                    </button>
+                    @if (!ResultPlan.IsSave)
+                    {
+                        <button @onclick="SaveCuttingPlan" class="btn btn-danger ms-2">
+                            <i class="fas fa-arrow-left"></i> Сохранить
+                        </button>
+                    }
+                    <button @onclick="ExportToPdf" class="btn btn-success ms-2">
+                        <i class="fas fa-file-pdf"></i> Бланк резка
+                    </button>
+                    @*<button @onclick="ExportToDXF" class="btn btn-secondary ms-2">
+                            <i class="fas fa-file-code"></i> Экспорт в DXF
+                        </button>*@
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-12">
+                    @if (ActiveTab == "2d")
+                    {
+                        <div class="view-container">
+                            <div class="sheet-tabs mb-3">
+                                @for (int i = 0; i < (ResultPlan.SheetLayouts?.Where(x => !x.IsEmpty).Count() ?? 0); i++)
+                                {
+                                    var index = i; 
+                                    <button class="btn @(i == CurrentSheetIndex ? "btn-primary" : "btn-outline-primary") me-2" 
+                                    @onclick="() => ChangeSheet(index)">
+                                        Лист @(i + 1)
+                                    </button>
+                                }
+                            </div>
+                            <div class="svg-container position-relative" style="height: 600px; overflow: hidden; border: 1px solid #ddd; background: #f8f9fa; border-radius: 8px;">
+                                <div class="svg-viewport" style="height: calc(100% - 56px); width: 100%; overflow: auto;">
+                                    <svg width="100%" height="100%"
+                                    version="1.1" xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="@($"0 0 {CurrentLayout?.Sheet?.Width ?? 1000} {CurrentLayout?.Sheet.Length ?? 2000}")"
+                                    preserveAspectRatio="xMinYMin meet"
+                                    style="display: block; background-color: white;">
+                                        <g transform="@($"scale(1,-1) translate(0, -{CurrentLayout?.Sheet.Length ?? 2000})")">
+
+                                            <!-- Сетка -->
+                                            @for (int i = 0; i <= (CurrentLayout?.Sheet?.Width ?? 1000); i += 100)
+                                            {
+                                                <line x1="@i" y1="0" x2="@i" y2="@(CurrentLayout?.Sheet?.Length ?? 2000)"
+                                                stroke="#eee" stroke-width="0.5" />
+                                            }
+                                            @for (int i = 0; i <= (CurrentLayout?.Sheet?.Length ?? 2000); i += 100)
+                                            {
+                                                <line x1="0" y1="@i" x2="@(CurrentLayout?.Sheet?.Width ?? 1000)" y2="@i"
+                                                stroke="#eee" stroke-width="0.5" />
+                                            }
+
+                                            <!-- Контур листа -->
+                                            <rect x="0" y="0"
+                                            width="@(CurrentLayout?.Sheet?.Width ?? 1000)"
+                                            height="@(CurrentLayout?.Sheet?.Length ?? 2000)"
+                                            fill="none" stroke="#333" stroke-width="2" />
+
+                                            <!-- Детали (под резами, чтобы не перекрывали стрелки) -->
+                                            @if (CurrentLayout?.Details != null)
+                                            {
+                                                @foreach (var detail in CurrentLayout.Details)
+                                                {
+                                                    <g @onclick="() => SelectDetail(detail)">
+                                                        <rect class="detail-rect"
+                                                        x="@detail.X.ToString().Replace(",", ".")" y="@detail.Y.ToString().Replace(",", ".")"
+                                                        width="@detail.Width" height="@detail.Length"
+                                                        fill="#4CAF50" fill-opacity="0.2" stroke="#2E7D32" stroke-width="1" rx="2" ry="2" />
+
+                                                        <!-- Название детали -->
+                                                        <text x="@((detail.X + detail.Width / 2).ToString().Replace(",", "."))"
+                                                        y="@((detail.Y + detail.Length / 2).ToString().Replace(",", "."))"
+                                                        text-anchor="middle" dominant-baseline="middle"
+                                                        font-size="24" fill="#2E7D32" font-weight="bold"
+                                                        transform="scale(1,-1) translate(0, @((-2*(detail.Y + detail.Length / 2)).ToString().Replace(",", ".")))">
+                                                            @detail.Name
+                                                        </text>
+
+                                                        <!-- Размеры -->
+                                                        <text x="@((detail.X + detail.Width / 2).ToString().Replace(",", "."))"
+                                                        y="@((detail.Y + 25).ToString().Replace(",", "."))"
+                                                        text-anchor="middle"
+                                                        font-size="20" fill="#333"
+                                                        transform="scale(1,-1) translate(0, @((-2 * (detail.Y + 25)).ToString().Replace(",", ".")))">
+                                                            @($"{detail.Width:0}×{detail.Length:0}")
+                                                        </text>
+                                                    </g>
+                                                }
+                                            }
+
+                                            <!-- Линии реза (анимированные по шагам) -->
+                                            @if (CurrentLayout?.CutLines != null)
+                                            {
+                                                var visibleCuts = CurrentLayout.CutLines.Where(cl => cl.IsVisible).ToList();
+                                                var currentStep = Math.Min(CurrentCutStep, visibleCuts.Count);
+
+                                                for (int i = 0; i < currentStep; i++)
+                                                {
+                                                    var cutLine = visibleCuts[i];
+                                                    var color = cutLine.Type == "vertical" ? "#d32f2f" : "#1976d2";
+                                                    var dash = cutLine.Type == "vertical" ? "6,4" : "4,6";
+                                                    var isCurrent = (i + 1 == CurrentCutStep && CurrentCutStep <= visibleCuts.Count);
+
+                                                    <!-- Линия реза -->
+                                                    <line x1="@cutLine.X1.ToString().Replace(",", ".")" y1="@cutLine.Y1.ToString().Replace(",", ".")"
+                                                    x2="@cutLine.X2.ToString().Replace(",", ".")" y2="@cutLine.Y2.ToString().Replace(",", ".")"
+                                                    stroke="@color" stroke-width="3.2"
+                                                    stroke-dasharray="@dash"
+                                                    opacity="@(isCurrent ? 1 : 0.7)"
+                                                    stroke-linecap="round"
+                                                    class="cut-line @(isCurrent ? "current-cut" : "")"
+                                                    style="transition: opacity 0.3s;" />
+
+                                                    <!-- Номер реза -->
+                                                    <circle cx="@((cutLine.X1 + 15).ToString().Replace(",", "."))" cy="@((cutLine.Y1 + 20).ToString().Replace(",", "."))" r="16"
+                                                    fill="@color" stroke="white" stroke-width="2" />
+                                                    <svg:text x="@((cutLine.X1 + 15).ToString().Replace(",", "."))" y="@((cutLine.Y1 + 20).ToString().Replace(",", "."))"
+                                                    text-anchor="middle" dominant-baseline="middle"
+                                                    font-size="16" fill="white" font-weight="bold"
+                                                    transform="scale(1,-1) translate(0, @((-2 * (cutLine.Y1 + 20)).ToString().Replace(",", ".")))">
+                                                        @(i + 1)
+                                                    </svg:text>
+
+                                                    <!-- Стрелка направления -->
+                                                    @if (cutLine.Type == "vertical")
+                                                    {
+                                                        <!-- Стрелка вниз -->
+                                                        <polygon points="@($"{(cutLine.X1 + 1.6).ToString().Replace(",", ".")},{(cutLine.Y1 + 20).ToString().Replace(",", ".")}") 
+                                    @($"{(cutLine.X1 - 3.2).ToString().Replace(",", ".")},{(cutLine.Y1 + 30).ToString().Replace(",", ".")}")
+                                    @($"{(cutLine.X1 + 6.4).ToString().Replace(",", ".")},{(cutLine.Y1 + 30).ToString().Replace(",", ".")}")"
+                                                        fill="@color" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <!-- Стрелка вправо -->
+                                                        <polygon points="@($"{(cutLine.X1 + 15).ToString().Replace(",", ".")},{(cutLine.Y1 + 6.6).ToString().Replace(",", ".")}") 
+                                    @($"{(cutLine.X1 + 25).ToString().Replace(",", ".")},{(cutLine.Y1 - 3.2).ToString().Replace(",", ".")}")
+                                    @($"{(cutLine.X1 + 25).ToString().Replace(",", ".")},{(cutLine.Y1 + 10.4).ToString().Replace(",", ".")}")"
+                                                        fill="@color" />
+                                                    }
+
+                                                    <!-- Подпись типа реза -->
+                                                    <svg:text x="@((cutLine.X1 + 30).ToString().Replace(",", "."))" y="@((cutLine.Y1 + 15).ToString().Replace(",", "."))"
+                                                    font-size="14" fill="@color" font-weight="bold"
+                                                    transform="scale(1,-1) translate(0, @((-2 * (cutLine.Y1 + 15)).ToString().Replace(",", ".")))">
+                                                        @(cutLine.Type == "vertical" ? "↓ Вертикальный" : "→ Горизонтальный")
+                                                    </svg:text>
+                                                }
+                                            }
+
+                                            <!-- Информационная панель -->
+                                            @*<foreignObject x="10" y="10" width="300" height="60">
+            <div xmlns="http://www.w3.org/1999/xhtml" style="background: rgba(255,255,255,0.9); padding: 8px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
+                <div style="font-weight: bold; color: #333;">Резов: @CurrentLayout.CutCount</div>
+                <div>Текущий шаг: @CurrentCutStep / @(CurrentLayout?.CutLines?.Count(c => c.IsVisible) ?? 0)</div>
+            </div>
+        </foreignObject>*@
+                                        </g>
+                                    </svg>
+                                </div>
+                                <!-- Панель управления анимацией -->
+                                <div class="position-absolute bottom-0 start-0 end-0 bg-light p-2 border-top" style="z-index: 10;">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="ResetCuts" title="Сброс">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-counterclockwise" viewBox="0 0 16 16">
+                                                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z" />
+                                                    <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="PrevCut" disabled="@(CurrentCutStep <= 1)" title="Предыдущий">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-caret-left" viewBox="0 0 16 16">
+                                                    <path d="M10 12.796V3.204L4.519 8zm-.659.753-5.48-4.796a1 1 0 0 1 0-1.506l5.48-4.796A1 1 0 0 1 11 3.204v9.592a1 1 0 0 1-1.659.753" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="NextCut" disabled="@(CurrentCutStep >= (CurrentLayout?.CutLines?.Count(c => c.IsVisible) ?? 0))" title="Следующий">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-caret-right" viewBox="0 0 16 16">
+                                                    <path d="M6 12.796V3.204L11.481 8zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-success" @onclick="StartAutoPlay" disabled="@IsPlaying" title="Автоплей">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-circle-fill" viewBox="0 0 16 16">
+                                                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M6.79 5.093A.5.5 0 0 0 6 5.5v5a.5.5 0 0 0 .79.407l3.5-2.5a.5.5 0 0 0 0-.814z" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="StopAutoPlay" disabled="!IsPlaying" title="Стоп">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-stop-circle" viewBox="0 0 16 16">
+                                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16" />
+                                                    <path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; color: #333;">Резов: @CurrentLayout.CutCount</div>
+                                            <div>Текущий шаг: @CurrentCutStep / @(CurrentLayout?.CutLines?.Count(c => c.IsVisible) ?? 0)</div>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-info">Лист: @(CurrentSheetIndex + 1)</span>
+                                            <span class="badge bg-success">Деталей: @CurrentLayout.Details?.Count</span>
+                                            <span class="badge bg-warning text-dark">Эффективность: @(CurrentLayout.MaterialUsage.ToString("P1"))</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            @if (SelectedDetail != null && ActiveTab != "stats")
+                            {
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                Выбранная деталь
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-md-3">
+                                                        <p><strong>Название:</strong> Деталь @SelectedDetail.Name</p>
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <p><strong>Размеры:</strong> @SelectedDetail.Width × @SelectedDetail.Length мм</p>
+                                                    </div>
+                                                    @*<div class="col-md-3">
+                                    <p><strong>Позиция:</strong> X: @SelectedDetail.X.ToString("0"), Y: @SelectedDetail.Y.ToString("0")</p>
+                                </div>*@
+                                                    <div class="col-md-3">
+                                                        <p><strong>Поворот:</strong> @(SelectedDetail.Rotated ? "Да" : "Нет")</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (ActiveTab == "3d")
+                    {
+                        <div class="view-container" id="@ContainerId">
+                            @if (IsLoading)
+                            {
+                                <div class="loading-overlay">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Загрузка...</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Масштаб</label>
+                                @*<input type="range" class="form-range" min="0.1" max="2" step="0.1" 
+                            @bind="ZoomLevel" @onchange="UpdateThreeJSView"/>*@
+                                <input type="range" class="form-range" min="0.1" max="2" step="0.1" 
+                                @bind="ZoomLevel"/>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <button class="btn btn-outline-secondary" @onclick="ResetThreeJSCamera">
+                                    <i class="fas fa-sync-alt"></i> Сбросить вид
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else if (ActiveTab == "stats")
+                    {
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h4>Статистика по листам</h4>
+                                <table class="table table-bordered stats-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Лист</th>
+                                            <th>Кол-во деталей</th>
+                                            <th>Заполнение</th>
+                                            <th>Эффективность</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var layoutitem in ResultPlan.SheetLayouts ?? Enumerable.Empty<SheetLayout>())
+                                        {
+                                            <tr>
+                                                <td>@layoutitem.Sheet.SKU</td>
+                                                <td>@(layoutitem.Details?.Count ?? 0)</td>
+                                                <td>@(CalculateSheetUsage(layoutitem).ToString("P1"))</td>
+                                                <td>@(CalculateSheetEfficiency(layoutitem).ToString("P1"))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h4>Детали</h4>
+                                <div class="card">
+                                    <div class="card-header">
+                                        Распределение деталей
+                                    </div>
+                                    <div class="card-body">
+                                        <canvas id="detailsChart" width="400" height="200"></canvas>
+                                    </div>
+                                </div>
+
+                                @if (ResultPlan.UnplacedDetails?.Any() == true)
+                                {
+                                    <div class="card mt-3">
+                                        <div class="card-header bg-warning">
+                                            Неразмещенные детали
+                                        </div>
+                                        <div class="card-body unplaced-details">
+                                            <ul class="list-group">
+                                                @foreach (var detail in ResultPlan.UnplacedDetails)
+                                                {
+                                                    <li class="list-group-item">
+                                                        @detail.Name (@detail.Width × @detail.Length мм) - @detail.Quantity шт.
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+        }
+    </div>
+
+</div>
+@code {
+    [Parameter]
+    public CuttingPlan? ResultPlan { get; set; }
+
+    [Parameter]
+    public List<Sheet>? CurrentSheet { get; set; }
+
+    [Parameter] public string HashId { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    public string? resplan { get; set; }
+
+    private string ContainerId { get; } = "threejs-container-" + Guid.NewGuid().ToString("N");
+    private int CurrentSheetIndex { get; set; } = 0;
+    private bool IsLoading { get; set; } = true;
+    private bool _is3DInitialized = false;
+    private CutDetail? SelectedDetail { get; set; }
+    private string ActiveTab { get; set; } = "2d";
+    private double ZoomLevel { get; set; } = 1.0;
+    private IJSObjectReference? ChartModule { get; set; }
+
+    private int CurrentCutStep { get; set; } = 0;
+    private bool IsPlaying { get; set; } = false;
+    private Timer? AutoPlayTimer;
+
+    private string NumCut = string.Empty;
+
+    private SheetLayout CurrentLayout => 
+    (ResultPlan?.SheetLayouts != null && ResultPlan.SheetLayouts.Count > CurrentSheetIndex) 
+        ? ResultPlan.SheetLayouts[CurrentSheetIndex] 
+        : new SheetLayout();
+
+    protected override async void OnInitialized()
+    {
+        //CurrentSheet ??= new Sheet { Width = 1525, Length = 1525, BarCode = "123", SKU = "555" }; // Значения по умолчанию
+        /*CurrentSheet ??= new List<Sheet>{
+            new Sheet { Width = 1525, Length = 1525, BarCode = "123", SKU = "555" }
+        };*/
+
+
+        State.OnChange += StateHasChanged;
+        //CurrentSheet = State.CurrentSheet;
+
+        if (!string.IsNullOrEmpty(HashId))
+        {
+            // Восстанавливаем объект из строки
+            //State.ListPlan = JsonSerializer.Deserialize<List<CuttingPlan>>(resplan);
+            State.ListPlan = await CuttingService.GetCuttingPlan(HashId);
+            //NumCut = await CuttingService.GetNumCuttingPLan(HashId);
+        }
+
+
+        // Получаем параметры из URL
+        /*var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("sheets", out var sheets))
+        {*/
+        /*ResultPlan = new CuttingPlan
+            {   OptimizationAlgorithm = State.CurrentPlan.OptimizationAlgorithm,
+                SheetLayouts = State.CurrentPlan.SheetLayouts,
+                TotalMaterialUsage = State.CurrentPlan.TotalMaterialUsage,
+                TotalWastePercentage = State.CurrentPlan.TotalWastePercentage,
+                 UnplacedDetails = State.CurrentPlan.UnplacedDetails
+            };*/
+        ResultPlan = new CuttingPlan
+            {
+                OptimizationAlgorithm = "Gill",
+                SheetLayouts = State.ListPlan.SelectMany(x => x.SheetLayouts).ToList(),
+                TotalMaterialUsage = State.ListPlan.Sum(x => x.TotalMaterialUsage),
+                TotalWastePercentage = State.ListPlan.Sum(x => x.TotalWastePercentage),
+                UnplacedDetails = State.ListPlan.SelectMany(x => x.UnplacedDetails).ToList(),
+                NumCut = await CuttingService.GetNumCuttingPLan(HashId),
+                IsSave = await CuttingService.IsSaveCuttingPLan(HashId),
+                Invoice = await CuttingService.InvoiceCuttingPLan(HashId)
+            };
+        //}
+    }
+
+    private List<SheetLayout> GetTestLayouts()
+    {
+        return new List<SheetLayout>
+        {
+            new SheetLayout
+            {
+                //SheetNumber = 1,
+                Details = new List<CutDetail>
+                {
+                    new CutDetail { X = 0, Y = 0, Width = 761, Length = 1525, Name = "Деталь 1" }
+                    /*new CutDetail { X = 10, Y = 10, Width = 100, Length = 50, Name = "Деталь 1" },
+                    new CutDetail { X = 120, Y = 10, Width = 80, Length = 60, Name = "Деталь 2" }*/
+                }
+            }
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (ActiveTab == "3d" && ResultPlan != null)
+            {
+                await InitializeThreeJS();
+            }
+            else if (ActiveTab == "stats")
+            {
+                //await InitializeChart();
+            }
+        }
+    }
+
+    private async Task InitializeThreeJS()
+    {
+            /*if (_is3DInitialized) return;
+
+            IsLoading = true;
+            StateHasChanged();
+
+            try
+            {
+            await ThreeJS.Initialize(ContainerId);
+                _is3DInitialized = true;
+        if (ActiveTab == "3d")
+            await RenderCurrentSheet();
+            }
+            catch (Exception ex)
+            {
+            Console.Error.WriteLine($"ThreeJS initialization failed: {ex.Message}");
+            }
+            finally
+            {
+            IsLoading = false;
+            StateHasChanged();
+        }*/
+        // Всегда очищаем предыдущую сцену
+        if (_is3DInitialized)
+        {
+            await ThreeJS.Cleanup();
+            _is3DInitialized = false;
+        }
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Даем время Blazor обновить DOM
+            await Task.Delay(100);
+
+            await ThreeJS.Initialize(ContainerId);
+            _is3DInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"ThreeJS initialization failed: {ex.Message}");
+            _is3DInitialized = false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+            /*private async Task InitializeChart()
+        {
+            try
+    {
+    ChartModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+        "import", new object[] { "./js/charts.js" });
+
+    var details = ResultPlan?.Layouts?
+        .SelectMany(l => l.Details ?? Enumerable.Empty<CutDetail>())
+        .GroupBy(d => d.Name)
+        .Select(g => new { Name = g.Key, Count = g.Count() })
+        .ToArray();
+
+        await ChartModule.InvokeVoidAsync("renderDetailsChart", 
+    "detailsChart", 
+        details?.Select(d => d.Name).ToArray(),
+        details?.Select(d => d.Count).ToArray());
+        }
+        catch (Exception ex)
+    {
+    Console.Error.WriteLine($"Chart initialization failed: {ex.Message}");
+    }
+    }*/
+
+    private async Task RenderCurrentSheet()
+    {
+        if (CurrentLayout.Details == null) return;
+
+        var details = CurrentLayout.Details.Select(d => new
+        {
+            x = d.X,
+            y = d.Y,
+            width = d.Width,
+            length = d.Length,
+            rotated = d.Rotated,
+            name = d.Name ?? $"Деталь {d.Width}×{d.Length}"
+        }).ToArray();
+
+        foreach(var CurrentSheet in CurrentSheet)
+        {
+            await ThreeJS.RenderSheet(
+                CurrentSheet?.Width ?? 1000,
+                CurrentSheet?.Length ?? 2000,
+                details);
+        }
+        StateHasChanged();
+    }
+
+    private async Task SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+
+        if (tab == "3d")
+        {
+            //await Task.Delay(500);
+            /*if (!_is3DInitialized)
+                await InitializeThreeJS();*/
+            await InitializeThreeJS();
+            await RenderCurrentSheet();
+        }
+        else if (tab == "stats")
+        {
+            //await InitializeChart();
+        }
+    }
+
+    private async Task ChangeSheet(int index)
+    {
+        CurrentSheetIndex = index;
+        SelectedDetail = null;
+
+        /*if (ActiveTab == "3d")
+            {
+            await Task.Delay(500);
+            await RenderCurrentSheet();
+        }*/
+    }
+
+    private void SelectDetail(CutDetail detail)
+    {
+        SelectedDetail = detail;
+    }
+
+    private async Task UpdateThreeJSView()
+    {
+        await ThreeJS.SetZoom(ZoomLevel);
+    }
+
+    private async Task ResetThreeJSCamera()
+    {
+        ZoomLevel = 1.0;
+        await ThreeJS.ResetCamera();
+    }
+
+    private async Task CleanupThreeJSView()
+    {
+        await ThreeJS.Cleanup();
+    }
+
+    private double CalculateSheetUsage(SheetLayout layout)
+    {
+        if (CurrentSheet == null || layout.Details == null) return 0;
+
+        var totalArea = CurrentSheet.FirstOrDefault().Width * CurrentSheet.FirstOrDefault().Length;
+        var usedArea = layout.Details.Sum(d => d.Width * d.Length);
+
+        return totalArea > 0 ? usedArea / totalArea : 0;
+    }
+
+    private double CalculateSheetEfficiency(SheetLayout layout)
+    {
+        if (CurrentSheet == null || layout.Details == null) return 0;
+
+        var totalArea = CurrentSheet.FirstOrDefault().Width * CurrentSheet.FirstOrDefault().Length;
+        var usedArea = layout.Details.Sum(d => d.Width * d.Length);
+        var boundingArea = (layout.Details.Max(d => d.X + d.Width) * (layout.Details.Max(d => d.Y + d.Length)));
+
+        return boundingArea > 0 ? usedArea / boundingArea : 0;
+    }
+
+    private void NavigateToIndex()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task ExportToPdf()
+    {
+        // Реализация экспорта в PDF
+        //await Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(HashId) || !Guid.TryParse(HashId, out var cuttingGuid))
+        {
+            // Можно показать уведомление через JS
+            return;
+        }
+
+        //NavigationManager.NavigateTo($"/cutterblank/{cuttingGuid}");
+        NavigationManager.NavigateTo($"/api/pdf/{cuttingGuid}", forceLoad: true);
+    }
+
+    private async Task SaveCuttingPlan()
+    {
+        //if(await CuttingService.SaveCuttangPlan(HashId))
+        ResultPlan.IsSave = await CuttingService.SaveCuttangPlan(HashId);
+    }
+
+    private async Task ExportToDXF()
+    {
+        // Реализация экспорта в DXF
+        await Task.CompletedTask;
+    }
+
+    /********SVG Control****/
+    private void ResetCuts()
+    {
+        CurrentCutStep = 0;
+        StopAutoPlay();
+        StateHasChanged();
+    }
+
+    private void NextCut()
+    {
+        if (CurrentLayout?.CutLines == null) return;
+        var maxSteps = CurrentLayout.CutLines.Count(c => c.IsVisible);
+        if (CurrentCutStep < maxSteps)
+        {
+            CurrentCutStep++;
+            StateHasChanged();
+        }
+    }
+
+    private void PrevCut()
+    {
+        if (CurrentCutStep > 0)
+        {
+            CurrentCutStep--;
+            StateHasChanged();
+        }
+    }
+
+    private void StartAutoPlay()
+    {
+        if (IsPlaying) return;
+        IsPlaying = true;
+        StateHasChanged();
+
+        AutoPlayTimer = new Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                var maxSteps = CurrentLayout?.CutLines?.Count(c => c.IsVisible) ?? 0;
+                if (CurrentCutStep < maxSteps)
+                {
+                    CurrentCutStep++;
+                    StateHasChanged();
+                }
+                else
+                {
+                    StopAutoPlay();
+                }
+            });
+        }, null, 0, 800); // 0.8 сек между шагами
+    }
+
+    private void StopAutoPlay()
+    {
+        IsPlaying = false;
+        AutoPlayTimer?.Dispose();
+        AutoPlayTimer = null;
+        StateHasChanged();
+    }
+
+
+    public async ValueTask DisposeAsync()
+    {
+        await ThreeJS.DisposeAsync();
+        //State.OnChange -= StateHasChanged;
+        Dispose();
+    }
+
+    public void Dispose()
+    {
+        // Освобождаем неасинхронные ресурсы
+        State.OnChange -= StateHasChanged;
+        // Другие действия
+    }
+}

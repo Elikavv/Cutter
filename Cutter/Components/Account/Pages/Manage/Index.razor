@@ -1,0 +1,159 @@
+﻿@page "/Account/Manage"
+@attribute [Authorize]
+@layout Cutter.Components.Account.Shared.ManageLayout
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Cutter.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Профиль</PageTitle>
+
+<h3 class="profile-title">📝 Управление профилем</h3>
+<StatusMessage />
+
+<div class="row">
+    <div class="col-xl-8">
+        <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+
+            @* Имя пользователя — всегда заблокировано *@
+            <div class="form-floating mb-3">
+                <input type="text" value="@username" id="username" class="form-control" disabled />
+                <label for="username" class="form-label">Имя пользователя</label>
+            </div>
+
+            @* ФИО — всегда заблокировано *@
+            <div class="form-floating mb-3">
+                <input type="text" value="@fullName" id="fullName" class="form-control" disabled />
+                <label for="fullName" class="form-label">ФИО</label>
+            </div>
+
+            @* Роль — всегда заблокирована *@
+            <div class="form-floating mb-3">
+                <input type="text" value="@roleDisplayName" id="role" class="form-control" disabled />
+                <label for="role" class="form-label">Роль</label>
+            </div>
+
+            @* Телефон — можно менять, если роль позволяет *@
+            @if (canEditPhone)
+            {
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.PhoneNumber" id="Input.PhoneNumber"
+                               class="form-control" placeholder="+7 (___) ___-__-__"
+                               disabled="@isSubmitting" />
+                    <label for="Input.PhoneNumber" class="form-label">Номер телефона</label>
+                    <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
+                    <small class="form-text text-muted">Вы можете изменить номер телефона</small>
+                </div>
+            }
+            else
+            {
+                <div class="form-floating mb-3">
+                    <input type="text" value="@phoneNumber" id="Input.PhoneNumber"
+                           class="form-control" disabled />
+                    <label for="Input.PhoneNumber" class="form-label">Номер телефона</label>
+                    <small class="form-text text-muted">Изменение телефона недоступно для вашей роли</small>
+                </div>
+            }
+
+            @if (canEditPhone)
+            {
+                <button type="submit" class="w-100 btn btn-lg btn-primary" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span>Сохранение...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-check-lg me-2"></i>
+                        <span>Сохранить изменения</span>
+                    }
+                </button>
+            }
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private ApplicationUser user = default!;
+    private string? username;
+    private string? fullName;
+    private string? phoneNumber;
+    private string? roleDisplayName;
+    private bool canEditPhone = false;
+    private bool isSubmitting = false; // 👈 НОВЫЙ ФЛАГ
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        username = await UserManager.GetUserNameAsync(user);
+        fullName = user.FullName;
+        phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+
+        var userRole = user.Role ?? "User";
+        canEditPhone = userRole == "User" || userRole == "Manager";
+
+        roleDisplayName = userRole switch
+        {
+            "User" => "Пользователь",
+            "Manager" => "Менеджер",
+            "AdminStore" => "Администратор магазина",
+            "AdminSuper" => "Супер-администратор",
+            _ => userRole
+        };
+
+        Input.PhoneNumber ??= phoneNumber;
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (isSubmitting) return; // 👈 Защита от повторного вызова
+
+        isSubmitting = true; // 👈 Блокируем форму
+        StateHasChanged();   // 👈 Обновляем UI (чтобы спиннер появился)
+
+        try
+        {
+            if (canEditPhone && Input.PhoneNumber != phoneNumber)
+            {
+                var setPhoneResult = await UserManager.SetPhoneNumberAsync(user, Input.PhoneNumber);
+                if (!setPhoneResult.Succeeded)
+                {
+                    RedirectManager.RedirectToCurrentPageWithStatus(
+                        "Ошибка: Не удалось обновить номер телефона.", HttpContext);
+                    return;
+                }
+            }
+
+            await SignInManager.RefreshSignInAsync(user);
+            RedirectManager.RedirectToCurrentPageWithStatus(
+                "Ваш профиль успешно обновлён", HttpContext);
+        }
+        finally
+        {
+            isSubmitting = false; // 👈 Разблокируем форму
+            StateHasChanged();
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Phone(ErrorMessage = "Введите корректный номер телефона")]
+        [Display(Name = "Номер телефона")]
+        public string? PhoneNumber { get; set; }
+    }
+}

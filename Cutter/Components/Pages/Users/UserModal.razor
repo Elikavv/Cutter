@@ -1,0 +1,110 @@
+﻿@using Cutter.Data
+
+@if (IsOpen)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@Title</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Имя (ФИО) *</label>
+                        <input class="form-control" @bind="User.UserName" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email *</label>
+                        <input type="email" class="form-control" @bind="User.Email" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Пароль
+                            <span class="text-muted">(оставьте пустым, чтобы не менять)</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="@(ShowPassword ? "text" : "password")"
+                                   class="form-control"
+                                   @bind="Password"
+                                   placeholder="Новый пароль (опционально)" />
+                            <button class="btn btn-outline-secondary" type="button" @onclick="TogglePasswordVisibility" title="Показать/скрыть">
+                                @if (ShowPassword)
+                                {
+                                    <span>🙈</span> <!-- Скрыть -->
+                                }
+                                else
+                                {
+                                    <span>👁️</span> <!-- Показать -->
+                                }
+                            </button>
+                            <button class="btn btn-outline-secondary" type="button" @onclick="GeneratePassword" title="Сгенерировать">🎲</button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Роль *</label>
+                        <select class="form-control" @bind="User.Role">
+                            @foreach (var role in AvailableRoles)
+                            {
+                                <option value="@role">@role</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Магазин *</label>
+                        <select class="form-control" @bind="User.StoreId">
+                            @foreach (var store in Stores)
+                            {
+                                <option value="@store.Id">@store.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="Submit">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public ApplicationUser User { get; set; } = new();
+    [Parameter] public List<Store> Stores { get; set; } = new();
+    [Parameter] public bool IsAdminSuperAvailable { get; set; } = false;
+    [Parameter] public List<string> AvailableRoles { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<(ApplicationUser User, string Password)> OnSave { get; set; }
+
+
+    private string Password { get; set; } = "";
+    private bool ShowPassword { get; set; } = false; // 👈 Управляет типом input
+
+    private void TogglePasswordVisibility()
+    {
+        ShowPassword = !ShowPassword;
+    }
+
+    private void GeneratePassword()
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        var random = new Random();
+        Password = new string(Enumerable.Repeat(chars, 12)
+            .Select(s => s[random.Next(s.Length)]).ToArray());
+        ShowPassword = true; // 👈 После генерации — показываем пароль
+    }
+
+    private async Task Submit()
+    {
+        await OnClose.InvokeAsync();
+        await OnSave.InvokeAsync((User, Password));
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

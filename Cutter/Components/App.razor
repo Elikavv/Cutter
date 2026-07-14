@@ -1,0 +1,39 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["lptheme.css"]" />
+    <link rel="stylesheet" href="@Assets["Cutter.styles.css"]" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    @*<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.1/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js"></script>*@
+    @*<script src="js/sheetRenderer.js"></script>*@
+    <script src="js/threeJsInterop.js"></script>
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <script src="_framework/blazor.web.js"></script>
+    @*<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.174.0/three.tsl.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.174.0/three.core.js"></script>*@
+    <script>
+        // Проверка загрузки Three.js
+        window.ensureThreeJSLoaded = function(callback) {
+            if (typeof THREE !== 'undefined') {
+                callback();
+            } else {
+                setTimeout(() => window.ensureThreeJSLoaded(callback), 100);
+            }
+        };
+    </script>
+</body>
+
+</html>

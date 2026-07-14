@@ -1,0 +1,43 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+@if (targetUrl != null)
+{
+    <meta http-equiv="refresh" content="0;url=@targetUrl" />
+}
+else
+{
+    <div class="text-center mt-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Определение роли...</span>
+        </div>
+    </div>
+}
+
+@code {
+    private string? targetUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (!authState.User.Identity.IsAuthenticated)
+        {
+            targetUrl = "/Account/Login";
+            return;
+        }
+
+        var role = authState.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        targetUrl = role switch
+        {
+            "AdminSuper" => "/admin-super",
+            "AdminStore" => "/admin-store",
+            "Manager" => "/manager",
+            "Cashier" => "/cashier",
+            _ => "/user"
+        };
+    }
+}

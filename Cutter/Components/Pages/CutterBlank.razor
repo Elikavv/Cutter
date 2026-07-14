@@ -1,0 +1,52 @@
+﻿@page "/cutterblank1/{CuttingId:guid}"
+@using Cutter.Services
+@inject CuttingService CuttingService
+@inject PdfCuttingService PdfService
+@inject NavigationManager NavigationManager
+
+@* Эта страница ничего не рендерит — сразу возвращает PDF *@
+@if (pdfResult != null)
+{
+    @pdfResult
+}
+
+@code {
+    [Parameter] public Guid CuttingId { get; set; }
+
+    private IResult? pdfResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Получаем все листы для этого раскроя
+            var layouts = await CuttingService.GetCuttingPlanUser(CuttingId.ToString());
+            if (layouts == null)
+            {
+                // Если нет данных — редиректим обратно
+                NavigationManager.NavigateTo("/cutting-plan/" + CuttingId.ToString("N"));
+                return;
+            }
+
+            CuttingService.SaveCuttangPlan(CuttingId.ToString());
+
+            // Генерируем PDF
+            var pdfBytes = PdfService.GeneratePdf(layouts);
+
+            // Отдаем PDF как inline-документ — браузер откроет его во вкладке
+            pdfResult = Results.File(
+                fileContents: pdfBytes,
+                contentType: "application/pdf",
+                fileDownloadName: null, // ← ключевое: null = открыть в браузере, не скачивать
+                lastModified: null,
+                entityTag: null,
+                enableRangeProcessing: false
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка генерации PDF: {ex.Message}");
+            NavigationManager.NavigateTo("/cutting-plan/" + CuttingId.ToString("N"));
+        }
+    }
+}

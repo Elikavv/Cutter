@@ -1,0 +1,195 @@
+﻿@page "/admin-store"
+@attribute [Authorize(Roles = "AdminStore, AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@using Cutter.Data
+@using System.Security.Claims
+@using static Cutter.Data.DBModels
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Аналитика магазина</PageTitle>
+
+<div class="container mt-4">
+    <h2>Аналитика магазина — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Виджет: количество распиловок -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card border-primary">
+                    <div class="card-body">
+                        <h5 class="card-title text-primary">Распиловок сегодня</h5>
+                        <h2 class="display-4">@totalCuttingPlans</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица листов -->
+        <h4>Использованные листы (@sheetStats.Count)</h4>
+        @if (sheetStats.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Наименование</th>
+                            <th>Арикул</th>
+                            <th>Количество</th>
+                            <th>Цена за лист, ₽</th>
+                            <th>Сумма, ₽</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var stat in sheetStats)
+                        {
+                            <tr>
+                                <td>@stat.Name</td>
+                                <td><code>@stat.SKU</code></td>
+                                <td>@stat.Quantity</td>
+                                <td>@stat.PricePerSheet.ToString("N0")</td>
+                                <td class="fw-bold">@stat.TotalAmount.ToString("N0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="4" class="text-end">Итого:</td>
+                            <td>@totalSheetAmount.ToString("N0") ₽</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">
+                Сегодня не использовано ни одного листа.
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private string? adminId;
+    private Guid? adminStoreId;
+    private int totalCuttingPlans = 0;
+    private decimal totalSheetAmount = 0;
+    private List<SheetStat> sheetStats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            adminId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!string.IsNullOrEmpty(adminId))
+            {
+                var admin = await DbContext.Users.FindAsync(adminId);
+                if (admin != null)
+                {
+                    adminStoreId = admin.StoreId;
+                    await LoadData();
+                }
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        var today = DateTime.Today;
+
+        // Загружаем все распиловки в магазине за сегодня
+        var plans = await DbContext.CutPlan
+            .Where(cp => cp.UserId != null && 
+                         cp.CreateDate.Date == today && 
+                         cp.IsSave &&
+                         cp.User.StoreId == adminStoreId)
+            .ToListAsync();
+
+        // Фильтруем по магазину админа
+        var filteredPlans = new List<CutPlan>();
+        foreach (var plan in plans)
+        {
+            var user = await DbContext.Users.FindAsync(plan.UserId);
+            if (user != null/* && user.StoreId == adminStoreId*/)
+            {
+                filteredPlans.Add(plan);
+            }
+        }
+
+        totalCuttingPlans = filteredPlans.Count;
+
+        // Собираем статистику по листам
+        var sheetDict = new Dictionary<string, SheetStat>();
+
+        foreach (var dbPlan in filteredPlans)
+        {
+            if (string.IsNullOrEmpty(dbPlan.CuttingPlan)) continue;
+
+            try
+            {
+                var cuttingPlans = JsonConvert.DeserializeObject<List<CuttingPlan>>(dbPlan.CuttingPlan);
+                if (cuttingPlans == null) continue;
+
+                foreach (var cp in cuttingPlans)
+                {
+                    foreach (var layout in cp.SheetLayouts)
+                    {
+                        var sheet = layout.Sheet;
+                        var key = $"{sheet.SKU}_{sheet.Price}_{sheet.CutPrice}"; // уникальный ключ
+
+                        if (!sheetDict.ContainsKey(key))
+                        {
+                            sheetDict[key] = new SheetStat
+                            {
+                                Name = sheet.Name ?? sheet.SKU,
+                                SKU = sheet.SKU,
+                                PricePerSheet = (decimal)sheet.Price
+                            };
+                        }
+
+                        sheetDict[key].Quantity += 1;
+                        sheetDict[key].TotalAmount += (decimal)sheet.Price;
+                    }
+                }
+            }
+            catch { /* игнорируем ошибки десериализации */ }
+        }
+
+        sheetStats = sheetDict.Values
+            .OrderByDescending(s => s.TotalAmount)
+            .ToList();
+
+        totalSheetAmount = sheetStats.Sum(s => s.TotalAmount);
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private class SheetStat
+    {
+        public string Name { get; set; } = string.Empty;
+        public string SKU { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal PricePerSheet { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+}

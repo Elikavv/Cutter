@@ -1,0 +1,456 @@
+﻿@page "/users"
+@attribute [Authorize(Roles = "AdminSuper, AdminStore, Manager")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Cutter.Data
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@inject UserManager<ApplicationUser> UserManager
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Пользователи</PageTitle>
+
+@if (showNotification && !string.IsNullOrEmpty(notificationMessage))
+{
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+        <div class="alert alert-@notificationType alert-dismissible fade show mb-0" role="alert">
+            @notificationMessage
+            <button type="button" class="btn-close" @onclick="() => showNotification = false"></button>
+        </div>
+    </div>
+}
+
+<div class="container mt-4">
+    <h3>Пользователи</h3>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <input @bind="searchTerm" @bind:event="oninput" class="form-control" placeholder="Поиск по имени, email, роли, магазину..." />
+            </div>
+            @if (canCreate)
+            {
+                <div class="col-md-6 text-end">
+                    <button class="btn btn-primary" @onclick="OpenCreateModal">➕ Добавить пользователя</button>
+                </div>
+            }
+        </div>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th @onclick="() => SortBy(nameof(ApplicationUser.UserName))" style="cursor:pointer">
+                        Имя @GetSortArrow(nameof(ApplicationUser.UserName))
+                    </th>
+                    <th @onclick="() => SortBy(nameof(ApplicationUser.Email))" style="cursor:pointer">
+                        Email @GetSortArrow(nameof(ApplicationUser.Email))
+                    </th>
+                    <th @onclick="() => SortBy(nameof(ApplicationUser.Role))" style="cursor:pointer">
+                        Роль @GetSortArrow(nameof(ApplicationUser.Role))
+                    </th>
+                    <th @onclick="@(() => SortBy("StoreName"))" style="cursor:pointer">
+                        Магазин @GetSortArrow("StoreName")
+                    </th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in displayedUsers)
+                {
+                    <tr>
+                        <td>@user.UserName</td>
+                        <td>@user.Email</td>
+                        <td>@user.Role</td>
+                        <td>@(user.Store?.Name ?? "—")</td>
+                        <td>
+                            @if (CanEditUser(user))
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="(() => OpenEditModal(user))">✏️</button>
+                            }
+                            @if (CanDeleteUser(user))
+                            {
+                                <button class="btn btn-sm btn-outline-danger" @onclick="(() => PrepareToDelete(user))">🗑️</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<UserModal IsOpen="isModalOpen"
+           Title="@(isNew ? "Добавить пользователя" : "Редактировать пользователя")"
+           User="editingUser"
+           Stores="availableStores"
+           AvailableRoles="GetAvailableRoles()"
+           OnClose="CloseModal"
+           OnSave="HandleValidSubmit" />
+
+@if (userToDelete != null)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5>Подтвердите удаление</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    Удалить пользователя <strong>@userToDelete.Email</strong>?
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Отмена</button>
+                    <button class="btn btn-danger" @onclick="ConfirmDelete">Удалить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser> allUsers = new();
+    private List<Store> allStores = new();
+    private ApplicationUser? currentUser;
+    private bool isLoading = true;
+    private bool isModalOpen = false;
+    private ApplicationUser editingUser = new();
+    private ApplicationUser? userToDelete;
+    private string searchTerm = "";
+    private string sortColumn = nameof(ApplicationUser.UserName);
+    private bool sortAscending = true;
+    private bool isNew = false;
+
+    private List<ApplicationUser> FilteredAndSortedUsers
+    {
+        get
+        {
+            var query = allUsers.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.ToLowerInvariant();
+                query = query.Where(u =>
+                    u.UserName.ToLower().Contains(term) ||
+                    u.Email.ToLower().Contains(term) ||
+                    u.Role.ToLower().Contains(term) ||
+                    (u.Store != null && u.Store.Name.ToLower().Contains(term))
+                );
+            }
+
+            query = sortColumn switch
+            {
+                nameof(ApplicationUser.UserName) => sortAscending
+                    ? query.OrderBy(u => u.UserName)
+                    : query.OrderByDescending(u => u.UserName),
+                nameof(ApplicationUser.Email) => sortAscending
+                    ? query.OrderBy(u => u.Email)
+                    : query.OrderByDescending(u => u.Email),
+                nameof(ApplicationUser.Role) => sortAscending
+                    ? query.OrderBy(u => u.Role)
+                    : query.OrderByDescending(u => u.Role),
+                "StoreName" => sortAscending
+                    ? query.OrderBy(u => u.Store != null ? u.Store.Name : string.Empty)
+                    : query.OrderByDescending(u => u.Store != null ? u.Store.Name : string.Empty),
+                _ => query.OrderBy(u => u.UserName)
+            };
+
+            return query.ToList();
+        }
+    }
+
+    private List<ApplicationUser> displayedUsers => FilterUsersForCurrentUser(FilteredAndSortedUsers);
+    private List<Store> availableStores => GetAvailableStores();
+
+    private bool canCreate => currentUser != null && (IsAdminSuper || IsAdminStore || IsManager);
+    private bool IsAdminSuper => currentUser?.Role == "AdminSuper";
+    private bool IsAdminStore => currentUser?.Role == "AdminStore";
+    private bool IsManager => currentUser?.Role == "Manager";
+    private bool IsUser => currentUser?.Role == "User";
+    private bool IsCashier => currentUser?.Role == "Cashier";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!string.IsNullOrEmpty(userId))
+            {
+                currentUser = await UserManager.FindByIdAsync(userId);
+            }
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        allUsers = await DbContext.Users.Include(u => u.Store).ToListAsync();
+        allStores = await DbContext.Stores.ToListAsync();
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private List<ApplicationUser> FilterUsersForCurrentUser(List<ApplicationUser> users)
+    {
+        if (currentUser == null) return new();
+
+        if (IsAdminSuper)
+        {
+            return users;
+        }
+        else if (IsAdminStore)
+        {
+            return users.Where(u => u.StoreId == currentUser.StoreId && (u.Role == "AdminStore" || u.Role == "Manager")).ToList();
+        }
+        else if (IsManager)
+        {
+            return users.Where(u => u.StoreId == currentUser.StoreId && (u.Role == "User" || u.Role == "Manager")).ToList();
+        }
+        else if (IsUser)
+        {
+            // Пользователь видит только себя
+            return users.Where(u => u.Id == currentUser.Id).ToList();
+        }
+
+        return new();
+    }
+
+    private List<Store> GetAvailableStores()
+    {
+        if (IsAdminSuper)
+        {
+            return allStores;
+        }
+        else if (IsAdminStore || IsManager || IsUser)
+        {
+            return allStores.Where(s => s.Id == currentUser!.StoreId).ToList();
+        }
+        return new();
+    }
+
+    private bool CanEditUser(ApplicationUser user)
+    {
+        if (currentUser == null) return false;
+
+        if (IsAdminSuper)
+            return true; // может редактировать всех
+
+        if (IsAdminStore || IsManager)
+            return user.StoreId == currentUser.StoreId; // только свой магазин
+
+        if (IsUser)
+            return user.Id == currentUser.Id; // только себя
+
+        return false;
+    }
+
+    private bool CanDeleteUser(ApplicationUser user)
+    {
+        if (currentUser == null) return false;
+        if (IsAdminSuper) return true;
+        if (IsAdminStore) return user.StoreId == currentUser.StoreId;
+        if (IsManager) return (user.StoreId == currentUser.StoreId && user.Role == "User");
+        return false;
+    }
+
+    private List<string> GetAvailableRoles()
+    {
+        if (IsAdminSuper)
+            return new() { "AdminSuper", "AdminStore", "Manager", "User", "Cashier" };
+        else if (IsAdminStore)
+            return new() { "Manager" };
+        else if (IsManager)
+            return new() { "User" };
+        else
+            return new() { "User" }; // fallback
+    }
+
+    private void OpenCreateModal()
+    {
+        editingUser = new ApplicationUser { Role = "User", UserName = "", Email = "" };
+        isNew = true;
+        isModalOpen = true;
+    }
+
+    private void OpenEditModal(ApplicationUser user)
+    {
+        editingUser = new ApplicationUser
+            {
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                StoreId = user.StoreId,
+                Role = user.Role
+            };
+        isNew = false;
+        isModalOpen = true;
+    }
+
+    private async Task HandleValidSubmit((ApplicationUser User, string Password) data)
+    {
+        var user = data.User;
+        var password = data.Password;
+
+        try
+        {
+            if (isNew)
+            {
+                var newUser = new ApplicationUser
+                    {
+                        UserName = user.UserName,
+                        Email = user.Email,
+                        StoreId = user.StoreId,
+                        Role = user.Role,
+                        EmailConfirmed = true
+                    };
+
+                var result = await UserManager.CreateAsync(newUser, password);
+                if (result.Succeeded)
+                {
+                    _ = ShowNotification("Пользователь добавлен", "success");
+                }
+                else
+                {
+                    _ = ShowNotification($"Ошибка: {string.Join(", ", result.Errors.Select(e => e.Description))}", "danger");
+                    return;
+                }
+            }
+            else
+            {
+                var existing = await UserManager.FindByIdAsync(user.Id);
+                if (existing != null)
+                {
+                    existing.UserName = user.UserName;
+                    existing.Email = user.Email;
+                    existing.StoreId = user.StoreId;
+                    existing.Role = user.Role;
+
+                    if (!string.IsNullOrWhiteSpace(password))
+                    {
+                        var token = await UserManager.GeneratePasswordResetTokenAsync(existing);
+                        var result = await UserManager.ResetPasswordAsync(existing, token, password);
+                        if (!result.Succeeded)
+                        {
+                            _ = ShowNotification($"Ошибка смены пароля: {string.Join(", ", result.Errors.Select(e => e.Description))}", "danger");
+                            return;
+                        }
+                    }
+
+                    var updateResult = await UserManager.UpdateAsync(existing);
+                    if (updateResult.Succeeded)
+                    {
+                        _ = ShowNotification("Пользователь обновлён", "info");
+                    }
+                    else
+                    {
+                        _ = ShowNotification($"Ошибка: {string.Join(", ", updateResult.Errors.Select(e => e.Description))}", "danger");
+                        return;
+                    }
+                }
+            }
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            _ = ShowNotification($"Ошибка: {ex.Message}", "danger");
+        }
+        finally
+        {
+            isModalOpen = false;
+        }
+    }
+
+    private void PrepareToDelete(ApplicationUser user)
+    {
+        userToDelete = user;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (userToDelete == null) return;
+
+        var toDelete = userToDelete;
+        userToDelete = null;
+        StateHasChanged();
+
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                var user = await UserManager.FindByIdAsync(toDelete.Id);
+                if (user != null)
+                {
+                    await UserManager.DeleteAsync(user);
+                    await LoadData();
+                    _ = ShowNotification("Пользователь удалён", "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = ShowNotification($"Ошибка: {ex.Message}", "danger");
+            }
+        });
+    }
+
+    private void CancelDelete()
+    {
+        userToDelete = null;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+    }
+
+    private string GetSortArrow(string column)
+    {
+        if (sortColumn != column) return "";
+        return sortAscending ? " ↑" : " ↓";
+    }
+
+    private string? notificationMessage;
+    private string notificationType = "success";
+    private bool showNotification = false;
+
+    private async Task ShowNotification(string message, string type = "success")
+    {
+        notificationMessage = message;
+        notificationType = type;
+        showNotification = true;
+        StateHasChanged();
+        await Task.Delay(4000);
+        showNotification = false;
+        StateHasChanged();
+    }
+}

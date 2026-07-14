@@ -1,0 +1,157 @@
+﻿/* =============================================
+   🧭 ЛЕВАЯ НАВИГАЦИОННАЯ ПАНЕЛЬ — СТИЛЬ ЛЕМАН ПРО
+   ============================================= */
+
+/* Фон всей боковой панели */
+.nav-scrollable {
+    background-color: var(--lp-graphite); /* Тёмный фон */
+    color: var(--lp-white);
+    padding: 1rem 0;
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 3.5rem; /* Под хедером */
+    width: 250px;
+    z-index: 100;
+    transition: all 0.3s ease;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Элементы меню */
+.nav-item {
+    font-size: 0.95rem;
+    padding: 0 1rem;
+}
+
+.nav-item:first-of-type {
+    padding-top: 1.5rem;
+}
+
+.nav-item:last-of-type {
+    padding-bottom: 2rem;
+}
+
+/* Стиль ссылок */
+.nav-item ::deep .nav-link {
+    color: rgba(255, 255, 255, 0.85); /* Светло-белый */
+    background: none;
+    border: none;
+    border-radius: 6px;
+    height: 3.2rem;
+    display: flex;
+    align-items: center;
+    line-height: 3.2rem;
+    width: 100%;
+    padding: 0 1rem;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+/* Ховер на пункте меню */
+.nav-item ::deep .nav-link:hover {
+    background-color: rgba(254, 213, 0, 0.15); /* Светло-жёлтый фон */
+    color: var(--lp-yellow); /* Жёлтый текст */
+    transform: translateX(4px);
+}
+
+/* Активный пункт меню */
+.nav-item ::deep a.active {
+    background-color: rgba(254, 213, 0, 0.25); /* Ярче жёлтый */
+    color: var(--lp-white) !important;
+    font-weight: 600;
+    box-shadow: 4px 0 0 var(--lp-yellow) inset; /* Жёлтая полоса слева */
+}
+
+/* Иконки */
+.bi {
+    display: inline-block;
+    position: relative;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.75rem;
+    top: -1px;
+    background-size: cover;
+    filter: brightness(0) invert(1); /* Делает иконки белыми */
+}
+
+/* Бургер-меню (для мобильных) */
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.5rem;
+    height: 2.5rem;
+    color: var(--lp-white);
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(255,255,255,0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(34, 34, 34, 0.4);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.navbar-toggler:hover {
+    background-color: rgba(254, 213, 0, 0.2);
+    border-color: var(--lp-yellow);
+}
+
+.navbar-toggler:checked {
+    background-color: rgba(254, 213, 0, 0.3);
+    border-color: var(--lp-yellow);
+}
+
+/* Верхняя строка (хедер) */
+.top-row {
+    min-height: 3.5rem;
+    background-color: var(--lp-graphite); /* Тот же фон, что и у сайдбара */
+    color: var(--lp-white);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 101;
+}
+
+.navbar-brand {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--lp-yellow) !important;
+}
+
+    .navbar-brand:hover {
+        color: var(--lp-orange) !important;
+    }
+
+/* Адаптивность — скрыть сайдбар на мобильных по умолчанию */
+.nav-scrollable {
+    display: none;
+}
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+@media (min-width: 992px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 3.5rem);
+        overflow-y: auto;
+    }
+
+    .page-content {
+        margin-left: 250px; /* Сдвиг контента, если сайдбар всегда виден */
+    }
+}
+
+/* Для страниц с контентом — добавьте класс .page-content к основному контейнеру */
+.page-content {
+    transition: margin-left 0.3s ease;
+    padding: 1.5rem;
+}

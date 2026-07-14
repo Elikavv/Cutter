@@ -1,0 +1,342 @@
+﻿@page "/admin-super"
+@attribute [Authorize(Roles = "AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@using Cutter.Data
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Панель суперадминистратора</PageTitle>
+
+<div class="container mt-4">
+    <h2>Панель суперадминистратора — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Фильтры -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3">
+                    <!-- Фильтр по магазинам -->
+                    <div class="col-md-4">
+                        <label class="form-label">Магазины</label>
+                        <select class="form-select" @onchange="OnStoreFilterChange" multiple>
+                            @foreach (var store in allStores)
+                            {
+                                <option value="@store.Id" selected="@(selectedStoreIds.Contains(store.Id))">@store.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- Фильтр по пользователям -->
+                    <div class="col-md-4">
+                        <label class="form-label">Пользователи</label>
+                        <select class="form-select" @onchange="OnUserFilterChange" multiple>
+                            @foreach (var user in allUsers)
+                            {
+                                <option value="@user.Id" selected="@(selectedUserIds.Contains(user.Id))">@user.UserName (@user.Store?.Name)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- Фильтр по статусу -->
+                    <div class="col-md-4">
+                        <label class="form-label">Статус</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showSaved" @onchange="@(e => ToggleStatusFilter(true, e))" checked="@showSaved" />
+                            <label class="form-check-label" for="showSaved">Сохранено</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showDrafts" @onchange="@(e => ToggleStatusFilter(false, e))" checked="@showDrafts" />
+                            <label class="form-check-label" for="showDrafts">Черновики</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Статистика по фильтру -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-primary">Распиловок</h6>
+                        <h4>@filteredPlans.Count</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-success">Резов</h6>
+                        <h4>@totalCuts</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-info">Сумма резов</h6>
+                        <h4>@totalCutAmount.ToString("N0") ₽</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-secondary">Листов</h6>
+                        <h4>@totalSheets</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица распиловок -->
+        <h4>Распиловки (@filteredPlans.Count)</h4>
+        @if (filteredPlans.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Номер</th>
+                            <th>Магазин</th>
+                            <th>Пользователь</th>
+                            <th>Статус</th>
+                            <th>Резов</th>
+                            <th>Сумма резов</th>
+                            <th>Время</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in filteredPlans)
+                        {
+                            var (cuts, cutAmount) = CalculateCutStats(item.CuttingPlan);
+                            var storeName = allStoresDict.GetValueOrDefault(item.StoreId, "—");
+                            var userName = allUsersDict.GetValueOrDefault(item.UserId, "—");
+
+                            <tr class="@(item.IsSave ? "" : "table-warning")"
+                            style="cursor: pointer;"
+                            @onclick="@(() => Navigation.NavigateTo("/cutting-plan/" + item.GUUID))">
+                                <td>
+                                    <code>@item.NumCut</code>
+                                    @if (!item.IsSave)
+                                    {
+                                        <span title="Черновик" class="ms-1">📝</span>
+                                    }
+                                </td>
+                                <td>@storeName</td>
+                                <td>@userName</td>
+                                <td>
+                                    @if (item.IsSave)
+                                    {
+                                        <span class="badge bg-success">Сохранено</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning text-dark">Черновик</span>
+                                    }
+                                </td>
+                                <td>@cuts</td>
+                                <td>@cutAmount.ToString("N0") ₽</td>
+                                <td>@item.CreateDate.ToString("HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">Нет распиловок по выбранному фильтру.</div>
+        }
+    }
+</div>
+
+@code {
+    [Inject] public NavigationManager Navigation { get; set; } = default!;
+
+    private bool isLoading = true;
+    private List<CutPlanItem> allPlans = new();
+    private List<Store> allStores = new();
+    private List<ApplicationUser> allUsers = new();
+    private Dictionary<Guid, string> allStoresDict = new();
+    private Dictionary<string, string> allUsersDict = new();
+
+    // Фильтры
+    private HashSet<Guid> selectedStoreIds = new();
+    private HashSet<string> selectedUserIds = new();
+    private bool showSaved = true;
+    private bool showDrafts = true;
+
+    // Отфильтрованные данные
+    private List<CutPlanItem> filteredPlans => allPlans
+        .Where(p =>
+            (selectedStoreIds.Count == 0 || selectedStoreIds.Contains(p.StoreId)) &&
+            (selectedUserIds.Count == 0 || selectedUserIds.Contains(p.UserId)) &&
+            ((p.IsSave && showSaved) || (!p.IsSave && showDrafts))
+        ).ToList();
+
+    private int totalCuts = 0;
+    private decimal totalCutAmount = 0;
+    private int totalSheets = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        var today = DateTime.Today;
+
+        // Загружаем всё
+        var dbPlans = await DbContext.CutPlan
+            .Where(cp => cp.CreateDate.Date == today)
+            .ToListAsync();
+
+        allStores = await DbContext.Stores.ToListAsync();
+        allStoresDict = allStores.ToDictionary(s => s.Id, s => s.Name);
+
+        var usersWithStore = await DbContext.Users.Include(u => u.Store).ToListAsync();
+        allUsers = usersWithStore;
+        allUsersDict = usersWithStore.ToDictionary(u => u.Id, u => u.UserName);
+
+        // Преобразуем в обогащённые объекты
+        allPlans = new List<CutPlanItem>();
+        foreach (var p in dbPlans)
+        {
+            var user = usersWithStore.FirstOrDefault(u => u.Id == p.UserId);
+            allPlans.Add(new CutPlanItem
+                {
+                    Id = p.Id,
+                    GUUID = p.GUUID,
+                    UserId = p.UserId,
+                    StoreId = user?.StoreId ?? Guid.Empty,
+                    CuttingPlan = p.CuttingPlan,
+                    CreateDate = p.CreateDate,
+                    IsSave = p.IsSave,
+                    NumCut = p.NumCut
+                });
+        }
+
+        // Инициализируем фильтры
+        selectedStoreIds = new(allStores.Select(s => s.Id));
+        selectedUserIds = new(allUsers.Select(u => u.Id));
+
+        RecalculateStats();
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private void RecalculateStats()
+    {
+        totalCuts = 0;
+        totalCutAmount = 0;
+        totalSheets = 0;
+
+        foreach (var plan in filteredPlans)
+        {
+            var (cuts, cutAmount) = CalculateCutStats(plan.CuttingPlan);
+            totalCuts += cuts;
+            totalCutAmount += cutAmount;
+
+            if (!string.IsNullOrEmpty(plan.CuttingPlan))
+            {
+                try
+                {
+                    var cps = JsonConvert.DeserializeObject<List<CuttingPlan>>(plan.CuttingPlan);
+                    totalSheets += cps?.Sum(cp => cp.SheetLayouts.Count) ?? 0;
+                }
+                catch { }
+            }
+        }
+    }
+
+    private (int cuts, decimal amount) CalculateCutStats(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return (0, 0);
+        try
+        {
+            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
+            if (plans == null) return (0, 0);
+
+            int totalCuts = 0;
+            decimal totalAmount = 0;
+
+            foreach (var p in plans)
+            {
+                foreach (var layout in p.SheetLayouts)
+                {
+                    var cutCount = layout.CutLines.Count();
+                    totalCuts += cutCount;
+                    totalAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
+                }
+            }
+            return (totalCuts, totalAmount);
+        }
+        catch
+        {
+            return (0, 0);
+        }
+    }
+
+    // Обработчики фильтров
+    private void OnStoreFilterChange(ChangeEventArgs e)
+    {
+        selectedStoreIds.Clear();
+        if (e.Value is string[] values)
+        {
+            foreach (var v in values)
+            {
+                if (Guid.TryParse(v, out var id))
+                    selectedStoreIds.Add(id);
+            }
+        }
+        RecalculateStats();
+    }
+
+    private void OnUserFilterChange(ChangeEventArgs e)
+    {
+        selectedUserIds.Clear();
+        if (e.Value is string[] values)
+        {
+            selectedUserIds.UnionWith(values);
+        }
+        RecalculateStats();
+    }
+
+    private void ToggleStatusFilter(bool isSaved, ChangeEventArgs e)
+    {
+        if (isSaved)
+            showSaved = (bool)(e.Value ?? false);
+        else
+            showDrafts = (bool)(e.Value ?? false);
+        RecalculateStats();
+    }
+
+    private class CutPlanItem
+    {
+        public int Id { get; set; }
+        public string GUUID { get; set; } = string.Empty;
+        public string UserId { get; set; } = string.Empty;
+        public Guid StoreId { get; set; }
+        public string? CuttingPlan { get; set; }
+        public DateTime CreateDate { get; set; }
+        public bool IsSave { get; set; }
+        public string NumCut { get; set; } = string.Empty;
+    }
+}

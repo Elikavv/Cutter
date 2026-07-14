@@ -1,0 +1,255 @@
+﻿@page "/cashier"
+@attribute [Authorize(Roles = "Cashier, AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@using Cutter.Data
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Панель кассира</PageTitle>
+
+<div class="container mt-4">
+    <h2>Панель кассира</h2>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Фильтр дат -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label">Начальная дата</label>
+                        <input type="date" class="form-control" @bind="startDate" />
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Конечная дата</label>
+                        <input type="date" class="form-control" @bind="endDate" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" @onclick="LoadData">Фильтровать</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-primary">Бланков</h6>
+                        <h4>@stats.CuttingPlansCount</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-success">Товаров</h6>
+                        <h4>@stats.TotalProducts</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-info">Сумма товаров</h6>
+                        <h4>@stats.TotalProductAmount.ToString("N0") ₽</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h6 class="card-title text-warning">Сумма резов</h6>
+                        <h4>@stats.TotalCutAmount.ToString("N0") ₽</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица распиловок -->
+        <h4>Бланки (@filteredPlans.Count)</h4>
+        @if (filteredPlans.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th># бланка</th>
+                            <th>Дата</th>
+                            <th>Товаров</th>
+                            <th>Сумма товаров</th>
+                            <th>Сумма резов</th>
+                            <th>Оплачено</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in filteredPlans)
+                        {
+                             <tr>
+                                <td><a href="api/pdf/@item.GUUID" target="_blank"><code style="color:#d63384!important">@item.CutNum</code></a></td>
+                                <td>@item.CreateDate.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td>@item.Products</td>
+                                <td>@item.ProductAmount.ToString("N0") ₽</td>
+                                <td>@item.CutAmount.ToString("N0") ₽</td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                                style="cursor:pointer"
+                                               id="paid-@item.Id"
+                                               @bind="item.IsPaid"
+                                               @bind:after="() => SavePaidStatus(item)" />
+                                        <label class="form-check-label" for="paid-@item.Id">
+                                            @(item.IsPaid ? "Да" : "Нет")
+                                        </label>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">Нет распиловок по выбранному фильтру.</div>
+        }
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private DateTime startDate = DateTime.Today.AddDays(-7);
+    private DateTime endDate = DateTime.Today;
+    private List<CutPlanForCashier> filteredPlans = new();
+    private CashierStats stats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        var plans = await DbContext.CutPlan
+            .Where(cp => cp.IsSave && cp.CreateDate >= startDate && cp.CreateDate <= endDate.AddDays(1).AddTicks(-1))
+            .ToListAsync();
+
+        filteredPlans = new List<CutPlanForCashier>();
+
+        int totalProducts = 0;
+        decimal totalProductAmount = 0;
+        decimal totalCutAmount = 0;
+
+        foreach (var p in plans)
+        {
+            var (products, productAmount, cutAmount) = CalculateStats(p.CuttingPlan);
+            totalProducts += products;
+            totalProductAmount += productAmount;
+            totalCutAmount += cutAmount;
+
+            filteredPlans.Add(new CutPlanForCashier
+            {
+                Id = p.Id,
+                GUUID = p.GUUID,
+                CutNum = p.NumCut,
+                CreateDate = p.CreateDate,
+                IsPaid = p.IsPaid,
+                Products = products,
+                ProductAmount = productAmount,
+                CutAmount = cutAmount
+            });
+        }
+
+        stats = new CashierStats
+        {
+            CuttingPlansCount = plans.Count,
+            TotalProducts = totalProducts,
+            TotalProductAmount = totalProductAmount,
+            TotalCutAmount = totalCutAmount
+        };
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private (int products, decimal productAmount, decimal cutAmount) CalculateStats(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return (0, 0, 0);
+        try
+        {
+            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
+            if (plans == null) return (0, 0, 0);
+
+            int totalProducts = 0;
+            decimal totalProductAmount = 0;
+            decimal totalCutAmount = 0;
+
+            foreach (var plan in plans)
+            {
+                foreach (var layout in plan.SheetLayouts)
+                {
+                    // Предположим, что `Sheet.Price` — это цена за лист (т.е. товар)
+                    totalProducts += 1;
+                    totalProductAmount += (decimal)layout.Sheet.Price;
+
+                    // Резы
+                    //var cutCount = layout.CutLines.Count(cl => cl.IsCut);
+                    var cutCount = layout.CutLines.Count();
+                    totalCutAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
+                }
+            }
+
+            return (totalProducts, totalProductAmount, totalCutAmount);
+        }
+        catch
+        {
+            return (0, 0, 0);
+        }
+    }
+
+    private async Task SavePaidStatus(CutPlanForCashier item)
+    {
+        var plan = await DbContext.CutPlan.FindAsync(item.Id);
+        if (plan != null)
+        {
+            plan.IsPaid = item.IsPaid;
+            plan.ModifyDate = DateTime.Now;
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private class CutPlanForCashier
+    {
+        public int Id { get; set; }
+        public string GUUID { get; set; } = string.Empty;
+        public string CutNum { get; set; } = string.Empty;
+        public DateTime CreateDate { get; set; }
+        public bool IsPaid { get; set; }
+        public int Products { get; set; }
+        public decimal ProductAmount { get; set; }
+        public decimal CutAmount { get; set; }
+    }
+
+    private class CashierStats
+    {
+        public int CuttingPlansCount { get; set; }
+        public int TotalProducts { get; set; }
+        public decimal TotalProductAmount { get; set; }
+        public decimal TotalCutAmount { get; set; }
+    }
+}

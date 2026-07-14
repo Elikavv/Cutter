@@ -1,0 +1,293 @@
+﻿@page "/manager"
+@attribute [Authorize(Roles = "Manager, AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@using Cutter.Data
+@using System.Security.Claims
+@using static Cutter.Data.DBModels
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Панель менеджера</PageTitle>
+
+<div class="container mt-4">
+    <h2>Панель менеджера — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Виджеты -->
+        <div class="row g-4 mb-5">
+            <div class="col-md-4">
+                <div class="card text-white bg-primary">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Распиловок</h5>
+                        <h2 class="display-4">@stats.CuttingPlansCount</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-white bg-success">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Резов</h5>
+                        <h2 class="display-4">@stats.TotalCuts</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-white bg-info">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Сумма резов</h5>
+                        <h2 class="display-4">@stats.TotalAmount.ToString("N0") ₽</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Фильтр по сотрудникам -->
+        @if (workingUsers.Any())
+        {
+            <h4>Сотрудники за сегодня (@workingUsers.Count)</h4>
+            <div class="row mb-4">
+                @foreach (var user in workingUsers)
+                {
+                    var isSelected = selectedUserIds.Contains(user.Id);
+                    var isHoveredNow = isHovered.GetValueOrDefault(user.Id, false);
+                    var shouldInvert = !isSelected && isHoveredNow;
+
+                    <div class="col-md-3 mb-3">
+                        <div class="card rounded-3 border
+                            @(isSelected ? "border-primary bg-primary text-white" :
+                              shouldInvert ? "border-primary bg-primary text-white" :
+                              "border-light bg-white text-dark")"
+                             style="cursor: pointer; transition: all 0.2s ease; height: 60px;"
+                             @onmouseover="() => isHovered[user.Id] = true"
+                             @onmouseout="() => isHovered[user.Id] = false"
+                             @onclick="() => ToggleUserFilter(user.Id)">
+                            <div class="card-body d-flex align-items-center justify-content-center">
+                                <strong>
+                                    @user.UserName
+                                </strong>
+                                @if (isSelected)
+                                {
+                                    <span class="ms-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z" />
+                                        </svg>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (selectedUserIds.Count > 0)
+            {
+                <div class="mb-4">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ClearUserFilter">
+                        Сбросить фильтр (@selectedUserIds.Count)
+                    </button>
+                </div>
+            }
+        }
+
+        <!-- Таблица распиловок -->
+        <h4>Распиловки (@FilteredCuttingPlans.Count)</h4>
+        @if (FilteredCuttingPlans.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Номер</th>
+                            <th>Кто делал</th>
+                            <th>Резов</th>
+                            <th>Сумма</th>
+                            <th>Время</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var plan in FilteredCuttingPlans)
+                        {
+                            var (cuts, amount) = CalculateStats(plan.CuttingPlan);
+                            var userName = usersById.GetValueOrDefault(plan.UserId, "—");
+                            <tr style="cursor: pointer;" @onclick="@(() => Navigation.NavigateTo("/cutting-plan/" + plan.GUUID))">
+                                <td><code>@plan.NumCut</code></td>
+                                <td>@userName</td>
+                                <td>@cuts</td>
+                                <td>@amount.ToString("N0") ₽</td>
+                                <td>@plan.CreateDate.ToString("HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">Нет распиловок по выбранному фильтру.</div>
+        }
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private string? managerId;
+    private Guid? managerStoreId;
+    private List<CutPlan> todayCuttings = new();
+    private List<ApplicationUser> workingUsers = new();
+    private Dictionary<string, string> usersById = new();
+    private HashSet<string> selectedUserIds = new();
+    private CuttingStats stats = new();
+    private Dictionary<string, bool> isHovered = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            managerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!string.IsNullOrEmpty(managerId))
+            {
+                var manager = await DbContext.Users.FindAsync(managerId);
+                if (manager != null)
+                {
+                    managerStoreId = manager.StoreId;
+                    await LoadData();
+                }
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        var today = DateTime.Today;
+
+        var plans = await DbContext.CutPlan
+            .Where(cp => cp.UserId != null &&
+                         cp.CreateDate.Date == today &&
+                         cp.IsSave &&
+                         cp.User.Role == "User" &&
+                         cp.User.StoreId == managerStoreId)
+            .ToListAsync();
+
+        var userIds = new HashSet<string>();
+        todayCuttings = new List<CutPlan>();
+
+        foreach (var plan in plans)
+        {
+            var user = await DbContext.Users.FindAsync(plan.UserId);
+            if (user != null/* && user.StoreId == managerStoreId*/)
+            {
+                todayCuttings.Add(plan);
+                userIds.Add(user.Id);
+            }
+        }
+
+        workingUsers = await DbContext.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToListAsync();
+
+        usersById = workingUsers.ToDictionary(u => u.Id, u => u.UserName);
+
+        int totalCuts = 0;
+        decimal totalAmount = 0;
+        foreach (var plan in todayCuttings)
+        {
+            var (cuts, amount) = CalculateStats(plan.CuttingPlan);
+            totalCuts += cuts;
+            totalAmount += amount;
+        }
+
+        stats = new CuttingStats
+            {
+                CuttingPlansCount = todayCuttings.Count,
+                TotalCuts = totalCuts,
+                TotalAmount = totalAmount
+            };
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private List<CutPlan> FilteredCuttingPlans
+    {
+        get
+        {
+            if (selectedUserIds.Count == 0)
+                return todayCuttings;
+            return todayCuttings.Where(p => selectedUserIds.Contains(p.UserId)).ToList();
+        }
+    }
+
+    private void ToggleUserFilter(string userId)
+    {
+        if (selectedUserIds.Contains(userId))
+        {
+            selectedUserIds.Remove(userId);
+        }
+        else
+        {
+            selectedUserIds.Add(userId);
+        }
+        isHovered[userId] = false; // убираем hover-эффект после клика
+        StateHasChanged();
+    }
+
+    private void ClearUserFilter()
+    {
+        selectedUserIds.Clear();
+        isHovered.Clear();
+        StateHasChanged();
+    }
+
+    private (int cuts, decimal amount) CalculateStats(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return (0, 0);
+        try
+        {
+            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
+            if (plans == null) return (0, 0);
+
+            int totalCuts = 0;
+            decimal totalAmount = 0;
+
+            foreach (var p in plans)
+            {
+                foreach (var layout in p.SheetLayouts)
+                {
+                    var cutCount = layout.CutLines.Count();
+                    totalCuts += cutCount;
+                    totalAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
+                }
+            }
+            return (totalCuts, totalAmount);
+        }
+        catch
+        {
+            return (0, 0);
+        }
+    }
+
+    private class CuttingStats
+    {
+        public int CuttingPlansCount { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+}

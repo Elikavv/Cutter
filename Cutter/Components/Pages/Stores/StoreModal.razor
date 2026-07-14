@@ -1,0 +1,74 @@
+﻿@using Cutter.Data
+
+@if (IsOpen)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@Title</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <form @onsubmit="Submit" class="modal-body">
+                    <input type="hidden" @bind="Store.Id" />
+
+                    <div class="mb-3">
+                        <label class="form-label">Название *</label>
+                        <input class="form-control" @bind="Store.Name" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Номер *</label>
+                        <input class="form-control" @bind="Store.StoreCode" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Адрес</label>
+                        <input class="form-control" @bind="Store.Address" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Телефон</label>
+                        <input class="form-control" @bind="Store.Phone" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Штрих-код</label>
+                        <input class="form-control" @bind="Store.CutBarCode" />
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" @bind="Store.IsActive" />
+                        <label class="form-check-label">Активен</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Подписка до</label>
+                        <input type="datetime-local" class="form-control" @bind="Store.SubscriptionExpiresAt" />
+                    </div>
+                </form>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Отмена</button>
+                    <button type="submit" class="btn btn-primary" @onclick="Submit">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public Store Store { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<Store> OnSave { get; set; }
+
+    private async Task Submit()
+    {
+        await OnClose.InvokeAsync();
+
+        await InvokeAsync(async () =>
+            {
+                await OnSave.InvokeAsync(Store);
+            });
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

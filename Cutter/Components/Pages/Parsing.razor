@@ -1,0 +1,55 @@
+﻿@page "/parsing"
+@using HtmlAgilityPack
+@using static Cutter.Data.DBModels
+@rendermode InteractiveServer
+
+<h3>Parsing</h3>
+
+<input type="text" name="name" @bind="linkUrl"/>
+
+<button type="button" @onclick="Parse">Parsing</button>
+
+
+@code {
+
+    private string linkUrl;
+
+    private void Parse()
+    {
+        Items items = new Items
+                { SKU = "123",
+                    Name = "test",
+                     BarCode = "456123"
+                };
+
+
+
+        var web = new HtmlWeb();
+        web.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+        web.UseCookies = true;
+        web.PreRequest = request =>
+        {
+            request.Headers.Add("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
+            return true;
+        };
+        //var document = web.Load("https://naberezhnye-chelny.lemanapro.ru/catalogue/fanera/");
+        var document = web.Load(linkUrl);
+
+
+        /*var web1 = new HtmlWeb();
+        var doc1 = web1.LoadFromBrowser(linkUrl, o =>
+            {
+            var webBrowser = (WebBrowser)o;
+
+            // WAIT until the dynamic text is set
+            return !string.IsNullOrEmpty(webBrowser.Document.GetElementById("root").InnerText);
+        });*/
+
+        var nodes = document.DocumentNode.SelectNodes("//*[@id='root']/div/main/div[3]/div[4]/div/section/div[3]/section/div[3]/div[1]");
+        if(nodes != null)
+            foreach(var node in nodes) {
+                items.Name = HtmlEntity.DeEntitize(node.SelectSingleNode("a").GetAttributeValue("href", "standart"));
+            }
+    }
+
+}

@@ -1,0 +1,373 @@
+﻿@page "/items"
+
+@rendermode InteractiveServer
+@using Cutter.Data
+@inject ApplicationDbContext _context
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Управление товарами</PageTitle>
+
+<h3 class="mb-4">Товары</h3>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="input-group">
+            <input type="text" class="form-control" placeholder="Поиск по названию, SKU или штрихкоду..." 
+                   @bind="searchText" @onkeyup="HandleKeyPress" />
+            <button class="btn btn-primary" type="button" @onclick="Search">
+                <i class="bi bi-search"></i> Поиск
+            </button>
+            @if (!string.IsNullOrEmpty(searchText))
+            {
+                <button class="btn btn-outline-secondary" type="button" @onclick="ClearSearch">
+                    <i class="bi bi-x"></i>
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+<table class="table table-striped table-hover">
+    <thead>
+        <tr>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.Id))">
+                ID @GetSortIcon(nameof(DBModels.Items.Id))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.Name))">
+                Название @GetSortIcon(nameof(DBModels.Items.Name))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.SKU))">
+                SKU @GetSortIcon(nameof(DBModels.Items.SKU))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.BarCode))">
+                Штрихкод @GetSortIcon(nameof(DBModels.Items.BarCode))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.Length))">
+                Размеры @GetSortIcon(nameof(DBModels.Items.Length))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.Price))">
+                Цена @GetSortIcon(nameof(DBModels.Items.Price))
+            </th>
+            <th style="cursor: pointer;" @onclick="() => SortBy(nameof(DBModels.Items.IsActive))">
+                Активен @GetSortIcon(nameof(DBModels.Items.IsActive))
+            </th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in filteredItems)
+        {
+            <tr style="cursor: pointer;" @onclick="() => OpenEditModal(item)">
+                <td>@item.Id</td>
+                <td>@item.Name</td>
+                <td>@item.SKU</td>
+                <td>@item.BarCode</td>
+                <td>@item.Length × @item.Width × @item.Depth</td>
+                <td>@item.Price.ToString("F2") ₽</td>
+                <td>
+                    @if (item.IsActive)
+                    {
+                        <span class="badge bg-success">Да</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Нет</span>
+                    }
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-primary" @onclick="() => OpenEditModal(item)" @onclick:stopPropagation>
+                        <i class="bi bi-pencil"></i> Изменить
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (filteredItems.Count == 0)
+{
+    <div class="alert alert-info">Товары не найдены</div>
+}
+
+<!-- Модальное окно редактирования -->
+@if (showEditModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактирование товара #@editingItem.Id</h5>
+                    <button type="button" class="btn-close" @onclick="CloseEditModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="@editingItem" OnValidSubmit="SaveItem">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Название *</label>
+                                <InputText class="form-control" @bind-Value="editingItem.Name" />
+                                <ValidationMessage For="@(() => editingItem.Name)" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">SKU *</label>
+                                <InputText class="form-control" @bind-Value="editingItem.SKU" />
+                                <ValidationMessage For="@(() => editingItem.SKU)" />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Штрихкод *</label>
+                                <InputText class="form-control" @bind-Value="editingItem.BarCode" />
+                                <ValidationMessage For="@(() => editingItem.BarCode)" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Тип материала</label>
+                                <InputSelect class="form-select" @bind-Value="editingItem.MaterialTypeId">
+                                    <option value="0">-- Выберите тип материала --</option>
+                                    @foreach (var material in materialTypes)
+                                    {
+                                        <option value="@material.Id">@material.MaterialName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Длина *</label>
+                                <InputNumber class="form-control" @bind-Value="editingItem.Length" />
+                                <ValidationMessage For="@(() => editingItem.Length)" />
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Ширина *</label>
+                                <InputNumber class="form-control" @bind-Value="editingItem.Width" />
+                                <ValidationMessage For="@(() => editingItem.Width)" />
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Глубина *</label>
+                                <InputNumber class="form-control" @bind-Value="editingItem.Depth" step="0.01" />
+                                <ValidationMessage For="@(() => editingItem.Depth)" />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Цена</label>
+                                <InputNumber class="form-control" @bind-Value="editingItem.Price" step="0.01" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Активен</label>
+                                <div class="form-check form-switch mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editingItem.IsActive" />
+                                    <label class="form-check-label">Товар активен</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <InputTextArea class="form-control" @bind-Value="editingItem.Descr" rows="3" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Изображения (JSON)</label>
+                            <InputTextArea class="form-control" @bind-Value="editingItem.Images" rows="3" 
+                                           placeholder='["image1.jpg", "image2.jpg"]' />
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseEditModal">Отмена</button>
+                            <button type="submit" class="btn btn-primary">Сохранить</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<DBModels.Items> allItems = new();
+    private List<DBModels.Items> filteredItems = new();
+    private DBModels.Items editingItem = new() { Name = "", BarCode = "", SKU = "" };
+    private bool showEditModal = false;
+    private string searchText = "";
+    private List<DBModels.MaterialType> materialTypes = new();
+    
+    // Сортировка
+    private string sortColumn = nameof(DBModels.Items.Name);
+    private bool sortAscending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadItems();
+        await LoadMaterialTypes();
+    }
+
+    private async Task LoadItems()
+    {
+        allItems = await _context.Set<DBModels.Items>()
+            .Include(i => i.MaterialType)
+            .ToListAsync();
+        
+        ApplyFilterAndSort();
+    }
+
+    private async Task LoadMaterialTypes()
+    {
+        materialTypes = await _context.Set<DBModels.MaterialType>()
+            .OrderBy(m => m.MaterialName)
+            .ToListAsync();
+    }
+
+    private void HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            Search();
+        }
+    }
+
+    private void Search()
+    {
+        ApplyFilterAndSort();
+    }
+
+    private void ClearSearch()
+    {
+        searchText = "";
+        ApplyFilterAndSort();
+    }
+
+    private void SortBy(string columnName)
+    {
+        if (sortColumn == columnName)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = columnName;
+            sortAscending = true;
+        }
+        
+        ApplyFilterAndSort();
+    }
+
+    private void ApplyFilterAndSort()
+    {
+        IEnumerable<DBModels.Items> query = allItems;
+
+        // Фильтр
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            query = query.Where(i => 
+                i.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                i.SKU.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                i.BarCode.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            );
+        }
+
+        // Сортировка
+        query = sortColumn switch
+        {
+            nameof(DBModels.Items.Id) => sortAscending 
+                ? query.OrderBy(i => i.Id) 
+                : query.OrderByDescending(i => i.Id),
+            nameof(DBModels.Items.Name) => sortAscending 
+                ? query.OrderBy(i => i.Name) 
+                : query.OrderByDescending(i => i.Name),
+            nameof(DBModels.Items.SKU) => sortAscending 
+                ? query.OrderBy(i => i.SKU) 
+                : query.OrderByDescending(i => i.SKU),
+            nameof(DBModels.Items.BarCode) => sortAscending 
+                ? query.OrderBy(i => i.BarCode) 
+                : query.OrderByDescending(i => i.BarCode),
+            nameof(DBModels.Items.Length) => sortAscending 
+                ? query.OrderBy(i => i.Length) 
+                : query.OrderByDescending(i => i.Length),
+            nameof(DBModels.Items.Price) => sortAscending 
+                ? query.OrderBy(i => i.Price) 
+                : query.OrderByDescending(i => i.Price),
+            nameof(DBModels.Items.IsActive) => sortAscending 
+                ? query.OrderBy(i => i.IsActive) 
+                : query.OrderByDescending(i => i.IsActive),
+            _ => sortAscending 
+                ? query.OrderBy(i => i.Name) 
+                : query.OrderByDescending(i => i.Name)
+        };
+
+        filteredItems = query.ToList();
+    }
+
+    private string GetSortIcon(string columnName)
+    {
+        if (sortColumn != columnName)
+            return "↕";
+        
+        return sortAscending ? "↑" : "↓";
+    }
+
+    private Task OpenEditModal(DBModels.Items item)
+    {
+        editingItem = new DBModels.Items
+        {
+            Id = item.Id,
+            Name = item.Name,
+            BarCode = item.BarCode,
+            SKU = item.SKU,
+            Length = item.Length,
+            Width = item.Width,
+            Depth = item.Depth,
+            Price = item.Price,
+            IsActive = item.IsActive,
+            Descr = item.Descr,
+            Images = item.Images,
+            MaterialTypeId = item.MaterialTypeId
+        };
+        
+        showEditModal = true;
+        return Task.CompletedTask;
+    }
+
+    private void CloseEditModal()
+    {
+        showEditModal = false;
+    }
+
+    private async Task SaveItem()
+    {
+        try
+        {
+            var existingItem = await _context.Set<DBModels.Items>()
+                .FirstOrDefaultAsync(i => i.Id == editingItem.Id);
+
+            if (existingItem != null)
+            {
+                existingItem.Name = editingItem.Name;
+                existingItem.SKU = editingItem.SKU;
+                existingItem.BarCode = editingItem.BarCode;
+                existingItem.Length = editingItem.Length;
+                existingItem.Width = editingItem.Width;
+                existingItem.Depth = editingItem.Depth;
+                existingItem.Price = editingItem.Price;
+                existingItem.IsActive = editingItem.IsActive;
+                existingItem.Descr = editingItem.Descr;
+                existingItem.Images = editingItem.Images;
+                existingItem.MaterialTypeId = editingItem.MaterialTypeId;
+
+                await _context.SaveChangesAsync();
+                
+                showEditModal = false;
+                await LoadItems();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка сохранения: {ex.Message}");
+        }
+    }
+}

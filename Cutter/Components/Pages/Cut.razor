@@ -1,0 +1,547 @@
+﻿@page "/cut"
+@page "/cut/{Hashid}"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Cutter.Data
+@using Cutter.Services
+@using System.Text.Json
+@using System.Security.Claims
+@using static Cutter.Data.DBModels
+@inject CuttingService CuttingService
+@inject NavigationManager NavigationManager
+@inject CuttingState State
+@inject SheetService SheetService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthProvider
+@inject IStoreContextService StoreContext
+@implements IDisposable
+@attribute [Authorize]
+
+
+@rendermode InteractiveServer
+
+<PageTitle>Новый раскрой</PageTitle>
+
+<h1>Оптимизация раскроя листовых материалов</h1>
+
+<div class="row">
+    <div class="col-md-3 mb-3">
+        @*<label class="form-label">Штриход или артикул</label>*@
+        <input @ref="searchInput"
+        @bind="searchCode"
+        @bind:event="oninput"
+        @onkeydown="HandleKeyDown"
+        placeholder="Штрихкод или артикул" class="form-control"/>
+        @if (showErrorSKU)
+        {
+            <div class="invalid-feedback d-block">
+                Товар не найден
+            </div>
+        }
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label">№ договора</label>
+            <input 
+                @bind="Invoice"
+                placeholder="№ договора" class="form-control" />
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">Доступные листы:</label>
+            @*<InputSelect @bind-Value="model.SelectedSheetIds" multiple class="form-select"
+                             onchange="this.dispatchEvent(new CustomEvent('input', { bubbles: true }))">
+                    @foreach (var sheet in availableSheets)
+                    {
+                        <option value="@sheet">
+                            @sheet.Name (@sheet.Length x @sheet.Width mm)
+                        </option>
+                    }
+                </InputSelect>*@
+            <select class="form-select" 
+            @onchange="@(e => AddSelectedSheet(e))">
+                <option value="">-- Выберите лист --</option>
+                @foreach (var sheet in availableSheets)
+                {
+                    <option value="@sheet.Id">
+                        @sheet.Name (@sheet.Length x @sheet.Width mm) - @sheet.SKU
+                    </option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <!-- Список выбранных листов -->
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">Выбранные листы:</label>
+            <div class="selected-sheets-container p-2 border rounded">
+                @if (SCut.Where(x => x.Sheet != null).Any())
+                {
+                    <ul class="list-group sheet-list">
+                        @foreach (var sheet in SCut)
+                        {
+                            <li class="@ActiveSheet(sheet.IsActive)">
+                                <div class="w-100 text-start sheet-li"
+                                @onclick="() => ActiveSheet(sheet)">
+                                    <strong>@sheet.Sheet.Name</strong><br>
+                                    Размер: @sheet.Sheet.Length x @sheet.Sheet.Width mm<br>
+                                    Артикукл: @sheet.Sheet.SKU
+                                </div>
+                                <div class="mb-2 me-4">
+                                    <strong>Кол-во</strong><br>
+                                    <div class="d-flex">
+                                        <div class="btn btn-secondary btn-sm rounded-circle me-2 pointer-event"
+                                        @onclick="() => MinusSheet(sheet)">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-dash-square" viewBox="0 0 16 16">
+                                                <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
+                                                <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8" />
+                                            </svg>
+                                        </div>
+                                        <div class="border border-secondary px-2 rounded me-2">
+                                            @sheet.QuantitySheet
+                                        </div>
+                                        <div class="btn btn-secondary btn-sm rounded-circle"
+                                        @onclick="() => PlusSheet(sheet)">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                                                <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
+                                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-primary position-relative" title="Добавить деталь"
+                                @onclick="() => OpenAddDetailModal(sheet)">
+                                    @if (sheet.Details.Sum(x => x.Quantity) > 0)
+                                    {
+
+                                        <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">
+                                            @sheet.Details.Sum(x => x.Quantity)
+                                        </span>
+                                    }
+
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
+                                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16" />
+                                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4" />
+                                    </svg>
+
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger ms-3" title="Удалить"
+                                @onclick="() => RemoveSheet(sheet)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+                                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+                                    </svg>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="text-muted">Не выбрано ни одного листа</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row">
+    @if (SCut.Count() > 0)
+    {
+
+        <div class="mt-4">
+            <h3>Список деталей</h3>
+
+            @if (SCut.Where(x => x.IsActive).FirstOrDefault().Details.Count == 0)
+            {
+                <p>Нет добавленных деталей</p>
+            }
+            else
+            {
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>№</th>
+                            <th>Размеры (мм)</th>
+                            <th>Количество</th>
+                            <th>Поворот</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var detail in SCut.Where(x => x.IsActive).FirstOrDefault().Details)
+                        {
+                            <tr>
+                                <td>@detail.Name</td>
+                                <td>@detail.Length x @detail.Width</td>
+                                <td>@detail.Quantity</td>
+                                <td>@(detail.CanRotate ? "Да" : "Нет")</td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger"
+                                    @onclick="@(() => RemoveDetail(detail))">
+                                        Удалить
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (SelectedSheets.Count() > 0)
+                {
+                    <button class="btn btn-success" @onclick="CalculateCutting">Рассчитать раскрой</button>
+                }
+            }
+
+        </div>
+    }
+</div>
+<!-- Modal для добавления детали -->
+@if (showAddDetailModal)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить деталь для листа: @targetSheetForNewDetail?.Sheet.Name</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body" @onkeydown="HandleModalKeyDown">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-3">
+                            <label class="form-label">Длина (мм):</label>
+                            <input type="number" class="form-control" @bind="NewDetailModal.Length" />
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Ширина (мм):</label>
+                            <input type="number" class="form-control" @bind="NewDetailModal.Width" />
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Количество:</label>
+                            <input type="number" class="form-control" @bind="NewDetailModal.Quantity" />
+                        </div>
+                        <div class="col-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" @bind="NewDetailModal.CanRotate" />
+                                <label class="form-check-label">Поворот</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="AddDetailFromModal">Добавить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<script>
+    window.selectInputText = function (element) {
+    if (element) {
+    element.select();
+    }
+    };
+</script>
+
+
+@code {
+    //private Sheet CurrentSheet { get; set; } = new Sheet();
+    [Parameter] public string HashId { get; set; } = default!;
+    [CascadingParameter]
+    private List<CuttingSource> SCut { get; set; } = new List<CuttingSource>();
+    private Detail NewDetail { get; set; } = new Detail();
+    private List<Detail> Details { get; set; } = new();
+    private CuttingPlan? ResultPlan { get; set; }
+    private List<CuttingPlan>? ResultListPlan { get; set; } = new List<CuttingPlan>();
+
+
+    private List<Sheet> availableSheets = new();
+    private List<Sheet> SelectedSheets = new();
+    //private CalculationModel model = new();
+
+    private StoreStatus Status = new();
+
+    private bool showAddDetailModal = false;
+    private CuttingSource? targetSheetForNewDetail;
+    private Detail NewDetailModal = new();
+
+    private ElementReference searchInput;
+    private string searchCode = "";
+    private bool showErrorSKU = false;
+
+    private string Invoice = "";
+
+    private int? selectedSheetId;
+
+    private string userId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+            {
+            userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            Status = await StoreContext.GetStatusAsync(userId);
+        }
+
+        availableSheets = await SheetService.GetActiveSheetsAsync(userId);
+        //if(!String.IsNullOrEmpty(HashId))
+         
+        //State.OnChange += StateHasChanged;
+        State.OnChangeAsync += HandleStateChangeAsync;
+        State.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+{
+    if (firstRender)
+    {
+        // Устанавливаем фокус на поле ввода при первой отрисовке страницы
+        await searchInput.FocusAsync();
+        
+        // Если вы хотите, чтобы текст внутри поля сразу выделялся 
+        // (как это происходит после нажатия Enter), используйте ваш JS-метод:
+        await SelectAllText();
+    }
+}
+
+    /*private async Task<bool> IsInRoleAsync(string userId, string role)
+        {
+        var userService = ScopedServices.GetRequiredService<IUserService>();
+        return await userService.IsInRoleAsync(userId, role);
+    }*/
+
+    private async Task HandleStateChangeAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(searchCode))
+        {
+            // Выполняем нужное действие
+            var sheetSearch = await SheetService.GetSheetByCode(searchCode.Trim());
+            if (sheetSearch == null)
+                showErrorSKU = true;
+            else
+            {
+                showErrorSKU = false;
+                var sheet = SCut.FirstOrDefault(x => x.Sheet.Id == sheetSearch.Id);
+                if (sheet != null)
+                    sheet.QuantitySheet++;
+                else
+                {
+                    SelectedSheets.Add(sheetSearch);
+                    SCut.ForEach(x => x.IsActive = false);
+                    SCut.Add(new CuttingSource { Sheet = sheetSearch, Details = new List<Detail>(), IsActive = true });
+                }
+            }
+            await SelectAllText();
+            StateHasChanged(); // Обновляем UI
+
+        }
+    }
+
+
+    private async Task SelectAllText()
+    {
+        await JSRuntime.InvokeVoidAsync("selectInputText", searchInput);
+    }
+    private async Task OnSelectedSheetsChanged()
+    {
+        /*var selectedIds = ((string[])e.Value).Select(int.Parse).ToList();
+        model.SelectedSheetIds = selectedIds;
+        SelectedSheets = await SheetService.GetSheetsByIdsAsync(selectedIds);*/
+        if (selectedSheetId.HasValue)
+        {
+            var sheetToAdd = availableSheets.FirstOrDefault(s => s.Id == selectedSheetId.Value);
+            if (sheetToAdd != null && !SelectedSheets.Any(s => s.Id == sheetToAdd.Id))
+            {
+                SelectedSheets.Add(sheetToAdd);
+                selectedSheetId = null; // Сбрасываем выбор
+            }
+        }
+    }
+
+    private void AddSelectedSheet(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var selectedId) && selectedId > 0)
+        {
+            var sheetToAdd = availableSheets.FirstOrDefault(s => s.Id == selectedId);
+            if (sheetToAdd != null)
+            {
+                var sheet = SCut.FirstOrDefault(x => x.Sheet.Id == sheetToAdd.Id);
+                if (sheet != null)
+                    sheet.QuantitySheet++;
+                else
+                {
+                    SelectedSheets.Add(sheetToAdd);
+                    SCut.ForEach(x => x.IsActive = false);
+                    SCut.Add(new CuttingSource { Sheet = sheetToAdd, Details = new List<Detail>(), IsActive = true });
+                }
+                StateHasChanged(); // Обновляем UI
+
+            }
+        }
+    }
+
+    private void RemoveSheet(CuttingSource scut)
+    { 
+        SCut.Remove(scut);
+        if(SCut.Count() > 0)
+            SCut[^1].IsActive = true;
+    }
+
+    private void ActiveSheet(CuttingSource scut)
+    {
+        SCut.ForEach(x => x.IsActive = false);
+        scut.IsActive = true;
+    }
+
+    private void MinusSheet(CuttingSource scut)
+    {
+        if (scut.QuantitySheet > 1)
+            scut.QuantitySheet--;
+        return;
+    }
+
+    private void PlusSheet(CuttingSource scut) => scut.QuantitySheet++;
+
+
+    private async Task Calculate()
+    {
+        if (!SelectedSheets.Any())
+        {
+            // Показать ошибку
+            return;
+        }
+
+        var resultPlan = new CuttingPlan();
+        //State.SetPlan(resultPlan, SelectedSheets);
+
+        NavigationManager.NavigateTo("/cutting-plan");
+    }
+
+    private void AddDetail()
+    {
+        /*Details.Add(new Detail
+        {
+        Length = NewDetail.Length,
+        Width = NewDetail.Width,
+        //Name = NewDetail.Name,
+        Name = (Details.Count() + 1).ToString(),
+        Quantity = NewDetail.Quantity,
+        CanRotate = NewDetail.CanRotate
+    });*/
+
+        SCut.Where(x => x.IsActive).FirstOrDefault().Details.Add(new Detail
+            {
+            Length = NewDetail.Length,
+            Width = NewDetail.Width,
+            //Name = NewDetail.Name,
+            Name = (Details.Count() + 1).ToString(),
+            Quantity = NewDetail.Quantity,
+            CanRotate = NewDetail.CanRotate
+        });
+
+        // Сброс формы
+        NewDetail = new Detail();
+    }
+
+    private void RemoveDetail(Detail detail)
+    {
+        SCut.Where(x => x.IsActive).FirstOrDefault().Details.Remove(detail);
+        //Details.Remove(detail);
+    }
+
+    private async Task CalculateCutting()
+    {
+        //ResultPlan = CuttingService.OptimizeCutting(CurrentSheet, Details);
+        if(SCut.Count > 0)
+        {
+            foreach (var plan in SCut)
+            {
+                var CurPlan = CuttingService.OptimizeCutting(Enumerable.Repeat(00, plan.QuantitySheet).Select(_ => plan.Sheet.Clone()).ToList(), plan.Details);
+                ResultListPlan.Add(CurPlan);
+            }
+        }
+
+        /*ResultPlan = CuttingService.OptimizeCutting(SelectedSheets, Details);
+        State.SetPlan(ResultPlan, SelectedSheets);*/
+
+        var guid = await CuttingService.StoreCuttingPlan(ResultListPlan, userId, Invoice);
+
+        State.SetPlan(ResultListPlan);
+
+        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
+
+        // Даем времени событию сработать (немного ждём)
+        await Task.Yield(); // ← Это важно: дает циклу обработки UI шанс "проглотить" событие
+
+        var data = JsonSerializer.Serialize(ResultListPlan);
+        var encodedData = Uri.EscapeDataString(data);
+
+        //NavigationManager.NavigateTo($"/cutting-plan?sheets={ResultPlan.FirstOrDefault().SheetsUsed}&usage={ResultPlan.FirstOrDefault().MaterialUsage}");
+        NavigationManager.NavigateTo($"/cutting-plan/{guid}");
+        //NavigationManager.NavigateTo($"/cutting-plan");
+    }
+
+    public void Dispose()
+    {
+        Console.WriteLine($"[Home] Dispose called. State InstanceId: {State.InstanceId}");
+        State.OnChangeAsync -= HandleStateChangeAsync;
+        State.OnChange -= StateHasChanged;
+    }
+
+    public class CalculationModel
+    {
+        public List<int> SelectedSheetIds { get; set; } = new();
+    }
+
+    public string ActiveSheet(bool active) => (active) ? "list-group-item d-flex justify-content-between align-items-center sheet-active rounded" : "list-group-item d-flex justify-content-between align-items-center sheet-item";
+
+    private void OpenAddDetailModal(CuttingSource sheet)
+    {
+        targetSheetForNewDetail = sheet;
+        NewDetailModal = new Detail(); // Сброс значений
+        showAddDetailModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showAddDetailModal = false;
+        targetSheetForNewDetail = null;
+    }
+
+    private void AddDetailFromModal()
+    {
+        if (targetSheetForNewDetail == null) return;
+
+        // Генерируем имя детали
+        NewDetailModal.Name = $"Деталь {targetSheetForNewDetail.Details.Count + 1}";
+
+        // Добавляем деталь в выбранный лист
+        targetSheetForNewDetail.Details.Add(NewDetailModal);
+
+        // Закрываем модалку
+        CloseModal();
+    }
+
+    private async Task HandleModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddDetailFromModal();
+        }
+    }
+
+    [Inject] private IServiceScopeFactory ScopedServices { get; set; } = null!;
+    
+}
