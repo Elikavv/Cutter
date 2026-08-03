@@ -68,6 +68,7 @@ builder.Services.AddScoped<CuttingState>();
 builder.Services.AddScoped<SheetService>();
 builder.Services.AddScoped<PdfCuttingService>();
 
+builder.Services.AddScoped<IStorePricingService, StorePricingService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStoreAccessService, StoreAccessService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
@@ -75,6 +76,29 @@ builder.Services.AddScoped<IStoreContextService, StoreContextService>();
 
 
 var app = builder.Build();
+
+
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+
+        // 1. Применяем миграции (создаем таблицы в БД, если их нет)
+        await context.Database.MigrateAsync();
+
+        // 2. Запускаем заполнение начальными данными
+        await SeedData.Initialize(context, userManager);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Произошла ошибка при применении миграций или сидировании данных.");
+    }
+}
+// 
 
 /*app.UseForwardedHeaders(new ForwardedHeadersOptions
 {

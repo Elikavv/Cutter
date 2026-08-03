@@ -1,7 +1,9 @@
-﻿using static Cutter.Data.DBModels;
+﻿using System.ComponentModel.DataAnnotations.Schema;
+using static Cutter.Data.DBModels;
 
 namespace Cutter.Data
 {
+    [Table("StoreItems")]
     public class StoreItem
     {
         public Guid StoreId { get; set; }

@@ -1,0 +1,676 @@
+﻿@page "/admin/services"
+@using Cutter.Data
+@using Cutter.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject IStorePricingService PricingService
+@inject AuthenticationStateProvider AuthProvider
+@inject UserManager<ApplicationUser> UserManager
+@attribute [Authorize(Roles = "AdminSuper,AdminStore")]
+@rendermode InteractiveServer
+
+<PageTitle>Управление услугами и ценами</PageTitle>
+
+<div class="container-fluid mt-4">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <h2 class="mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-gear me-2" viewBox="0 0 16 16">
+                <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0" />
+                <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319" />
+            </svg>
+            Управление каталогом
+        </h2>
+
+        <ul class="nav nav-tabs lemana-tabs mb-4">
+            @if (isAdmin)
+            {
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == "materials" ? "active text-dark" : "text-dark")"
+                            @onclick="@(() => SwitchTab("materials"))">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-layers me-1" viewBox="0 0 16 16">
+                            <path d="M8 1.5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-5z" />
+                            <path d="M2.5 8a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-5z" />
+                            <path d="M8 8a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-5z" />
+                        </svg>
+                        Типы материалов
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == "services" ? "active text-dark" : "text-dark")"
+                            @onclick="@(() => SwitchTab("services"))">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-list-ul me-1" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5" />
+                            <path d="M3 11.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1h-.5a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1h-.5a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1h-.5a.5.5 0 0 1-.5-.5" />
+                        </svg>
+                        Услуги
+                    </button>
+                </li>
+            }
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "prices" ? "active text-dark" : "text-dark")"
+                        @onclick="@(() => SwitchTab("prices"))">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cash-coin me-1" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M11 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8m5-4a5 5 0 1 1-10 0 5 5 0 0 1 10 0" />
+                        <path d="M9.438 11.944c.047.596.518 1.06 1.363 1.116v.44h.375v-.443c.875-.061 1.386-.529 1.386-1.207 0-.618-.39-.936-1.09-1.1l-.296-.07v-1.2c.376.043.614.248.671.532h.658c-.047-.575-.54-1.024-1.329-1.073V8.5h-.375v.45c-.747.073-1.255.522-1.255 1.158 0 .562.378.92 1.007 1.066l.248.061v1.272c-.384-.058-.639-.27-.696-.563h-.668zm1.36-1.354c-.369-.085-.569-.26-.569-.522 0-.294.216-.514.572-.578v1.1zm.432.746c.449.104.655.272.655.569 0 .339-.257.571-.709.614v-1.195z" />
+                        <path d="M1 0a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h4.083q.088-.517.258-1H3a2 2 0 0 0-2-2V3a2 2 0 0 0 2-2h10a2 2 0 0 0 2 2v3.528c.38.34.717.728 1 1.154V1a1 1 0 0 0-1-1z" />
+                        <path d="M9.998 5.083 10 5a2 2 0 1 0-3.132 1.65 6 6 0 0 1 3.13-1.567" />
+                    </svg>
+                    Цены
+                </button>
+            </li>
+        </ul>
+
+        @if (activeTab == "materials" && isAdmin)
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4>Справочник типов материалов</h4>
+                <button class="btn btn-primary" @onclick="ShowAddMaterialModal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-1" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2" />
+                    </svg>
+                    Добавить тип
+                </button>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 25%">Название</th>
+                                <th style="width: 45%">Описание</th>
+                                <th style="width: 20%">Услуга по умолчанию</th>
+                                <th style="width: 10%"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var material in materialTypes)
+                            {
+                                <tr>
+                                    <td><strong>@material.MaterialName</strong></td>
+                                    <td class="text-muted small">@material.Descr</td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(material.DefaultServiceName))
+                                        {
+                                            <span class="badge bg-primary">@material.DefaultServiceName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Не назначена</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditMaterial(material)" style="border-color: #0055A4; color: #0055A4;">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
+                                                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z" />
+                                                    <path d="m9.707 5.707 1-1-1.414-1.414-1 1z" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteMaterial(material)" style="border-color: #dc3545; color: #dc3545;">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+                                                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (activeTab == "services" && isAdmin)
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4>Справочник услуг</h4>
+                <button class="btn btn-primary" @onclick="ShowAddServiceModal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-1" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2" />
+                    </svg>
+                    Добавить услугу
+                </button>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Все услуги</h5>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 5%">Порядок</th>
+                                <th style="width: 25%">Название</th>
+                                <th style="width: 45%">Описание</th>
+                                <th style="width: 15%">Тип</th>
+                                <th style="width: 10%"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var service in services.OrderBy(s => s.SortOrder))
+                            {
+                                <tr>
+                                    <td>@service.SortOrder</td>
+                                    <td><strong>@service.Name</strong></td>
+                                    <td class="text-muted small">@service.Description</td>
+                                    <td>
+                                        @if (service.IsExtraService)
+                                        {
+                                            <span class="badge bg-info text-dark">Дополнительная</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-primary">Основная</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditService(service)" style="border-color: #0055A4; color: #0055A4;">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
+                                                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z" />
+                                                    <path d="m9.707 5.707 1-1-1.414-1.414-1 1z" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteService(service)" style="border-color: #dc3545; color: #dc3545;">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+                                                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (activeTab == "prices")
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                @if (isAdmin)
+                {
+                    <div class="d-flex align-items-center">
+                        <label class="form-label me-2 mb-0">Магазин:</label>
+                        <select class="form-select" style="width: 300px;" @bind="selectedStoreId" @bind:after="LoadPrices">
+                            <option value="">-- Выберите магазин --</option>
+                            @foreach (var store in stores)
+                            {
+                                <option value="@store.Id">@store.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info mb-0 py-2">
+                        <strong>Ваш магазин:</strong> @currentStoreName
+                    </div>
+                }
+
+                @if (selectedStoreId != Guid.Empty)
+                {
+                    <button class="btn btn-primary" @onclick="ShowAddServiceToStoreModal">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-1" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2" />
+                        </svg>
+                        Добавить услугу
+                    </button>
+                }
+            </div>
+
+            @if (selectedStoreId != Guid.Empty)
+            {
+                @if (prices.Any())
+                {
+                    <form @onsubmit="SavePrices">
+                        <div class="card mb-4">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0">Услуги магазина (@prices.Count)</h5>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 5%">Тип</th>
+                                            <th style="width: 30%">Услуга</th>
+                                            <th style="width: 45%">Описание</th>
+                                            <th style="width: 15%">Цена (₽)</th>
+                                            <th style="width: 5%"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var price in prices.OrderBy(p => p.IsExtraService).ThenBy(p => p.ServiceName))
+                                        {
+                                            <tr>
+                                                <td class="align-middle">
+                                                    @if (price.IsExtraService)
+                                                    {
+                                                        <span class="badge bg-info text-dark">Доп.</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-primary">Осн.</span>
+                                                    }
+                                                </td>
+                                                <td class="align-middle"><strong>@price.ServiceName</strong></td>
+                                                <td class="align-middle text-muted small">@price.Description</td>
+                                                <td class="align-middle">
+                                                    <div class="input-group">
+                                                        <input type="number"
+                                                               class="form-control"
+                                                               @bind="price.Price"
+                                                               @bind:event="oninput"
+                                                               step="0.01"
+                                                               min="0" />
+                                                        <span class="input-group-text">₽</span>
+                                                    </div>
+                                                </td>
+                                                <td class="align-middle text-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RemoveServiceFromStore(price)" title="Удалить из магазина">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+                                                            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+                                                        </svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 mb-5">
+                            <button type="button" class="btn btn-secondary" @onclick="LoadPrices">Сбросить изменения</button>
+                            <button type="submit" class="btn btn-success btn-lg" disabled="@isSaving">
+                                @if (isSaving)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                }
+                                Сохранить цены
+                            </button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <div class="alert alert-info text-center">
+                        <i class="bi bi-info-circle me-2"></i>
+                        В этом магазине еще нет услуг. Нажмите "Добавить услугу", чтобы начать.
+                    </div>
+                }
+            }
+            else if (isAdmin)
+            {
+                <div class="alert alert-warning text-center">Пожалуйста, выберите магазин из списка выше.</div>
+            }
+        }
+    }
+</div>
+
+@if (showMaterialModal)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingMaterial.Id == 0 ? "Добавить тип материала" : "Редактировать тип материала")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseMaterialModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Название *</label>
+                        <input type="text" class="form-control" @bind="editingMaterial.MaterialName" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Описание</label>
+                        <textarea class="form-control" @bind="editingMaterial.Descr" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Услуга по умолчанию</label>
+                        <select class="form-select" @bind="editingMaterial.DefaultCuttingServiceId">
+                            <option value="0">-- Не назначена --</option>
+                            @foreach (var service in services.Where(s => !s.IsExtraService))
+                            {
+                                <option value="@service.Id">@service.Name</option>
+                            }
+                        </select>
+                        <small class="text-muted">Эта услуга будет выбираться автоматически при работе с данным материалом</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseMaterialModal">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveMaterial" disabled="@isSavingMaterial">
+                        @if (isSavingMaterial)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        }
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showServiceModal)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingService.Id == 0 ? "Добавить услугу" : "Редактировать услугу")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseServiceModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Название услуги *</label>
+                        <input type="text" class="form-control" @bind="editingService.Name" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Описание</label>
+                        <textarea class="form-control" @bind="editingService.Description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Тип услуги *</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="isExtraService"
+                                   @bind="editingService.IsExtraService"
+                                   style="cursor: pointer; transform: scale(1.2);">
+                            <label class="form-check-label fw-bold"
+                                   for="isExtraService"
+                                   style="cursor: pointer;">
+                                @(editingService.IsExtraService ? "Дополнительная услуга" : "Основная услуга")
+                            </label>
+                        </div>
+                        <small class="text-muted">
+                            @(editingService.IsExtraService
+                                ? "Например: вырез под мойку, отверстие под петли"
+                                : "Стандартный рез материала (ДСП, столешница и т.д.)")
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Порядок отображения</label>
+                        <input type="number" class="form-control" @bind="editingService.SortOrder" min="0" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseServiceModal">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveService" disabled="@isSavingService">
+                        @if (isSavingService)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        }
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showAddServiceModal)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить услугу в магазин</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddServiceModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (availableServices.Any())
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Выберите услугу из справочника *</label>
+                            <select class="form-select" @bind="selectedServiceId">
+                                <option value="0">-- Выберите услугу --</option>
+                                @foreach (var service in availableServices)
+                                {
+                                    <option value="@service.ServiceId">
+                                        @service.ServiceName
+                                        @(service.IsExtraService ? "(Доп.)" : "(Осн.)")
+                                    </option>
+                                }
+                            </select>
+                            @if (selectedServiceId > 0)
+                            {
+                                var selectedService = availableServices.FirstOrDefault(s => s.ServiceId == selectedServiceId);
+                                if (selectedService != null)
+                                {
+                                    <small class="text-muted mt-1 d-block">
+                                        @selectedService.Description
+                                    </small>
+                                }
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Цена (₽) *</label>
+                            <input type="number" class="form-control" @bind="newServicePrice" step="0.01" min="0" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            Все услуги из справочника уже добавлены в этот магазин.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAddServiceModal">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="AddServiceToStore" disabled="@(selectedServiceId == 0 || newServicePrice <= 0)">
+                        Добавить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string activeTab = "materials";
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isSavingMaterial = false;
+    private bool isSavingService = false;
+    private bool isAdmin = false;
+
+    private List<MaterialTypeDto> materialTypes = new();
+    private List<ServiceDto> services = new();
+    private List<Store> stores = new();
+    private Guid selectedStoreId = Guid.Empty;
+    private string currentStoreName = string.Empty;
+    private List<ServicePriceDto> prices = new();
+
+    private bool showMaterialModal = false;
+    private bool showServiceModal = false;
+    private MaterialTypeDto editingMaterial = new();
+    private ServiceDto editingService = new();
+
+    private bool showAddServiceModal = false;
+    private int selectedServiceId = 0;
+    private float newServicePrice = 0;
+    private List<AvailableServiceDto> availableServices = new();
+
+    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            isAdmin = user.IsInRole("AdminSuper") || user.IsInRole("Admin");
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            if (isAdmin)
+            {
+                stores = await PricingService.GetAllStoresAsync();
+                services = await PricingService.GetAllServicesAsync();
+                materialTypes = await PricingService.GetAllMaterialTypesAsync();
+
+                if (stores.Any()) selectedStoreId = stores.First().Id;
+            }
+            else
+            {
+                var userStoreId = await PricingService.GetUserStoreIdAsync(userId);
+                if (userStoreId.HasValue)
+                {
+                    selectedStoreId = userStoreId.Value;
+                    var allStores = await PricingService.GetAllStoresAsync();
+                    currentStoreName = allStores.FirstOrDefault(s => s.Id == selectedStoreId)?.Name ?? "Неизвестный магазин";
+                }
+                activeTab = "prices";
+            }
+        }
+
+        if (selectedStoreId != Guid.Empty) await LoadPrices();
+        isLoading = false;
+    }
+
+    private void SwitchTab(string tab) { activeTab = tab; }
+
+    private async Task LoadPrices()
+    {
+        if (selectedStoreId == Guid.Empty) return;
+        isLoading = true;
+        StateHasChanged();
+        prices = await PricingService.GetStorePricesAsync(selectedStoreId);
+        isLoading = false;
+    }
+
+    private async Task SavePrices()
+    {
+        if (selectedStoreId == Guid.Empty) return;
+        isSaving = true;
+        StateHasChanged();
+        try
+        {
+            foreach (var price in prices)
+            {
+                if (price.Id.HasValue)
+                {
+                    await PricingService.UpdateServicePriceAsync(price.Id.Value, price.Price);
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения: {ex.Message}"); }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private void ShowAddMaterialModal() { editingMaterial = new MaterialTypeDto(); showMaterialModal = true; }
+    private void EditMaterial(MaterialTypeDto material)
+    {
+        editingMaterial = new MaterialTypeDto { Id = material.Id, MaterialName = material.MaterialName, Descr = material.Descr, DefaultCuttingServiceId = material.DefaultCuttingServiceId };
+        showMaterialModal = true;
+    }
+    private void CloseMaterialModal() { showMaterialModal = false; editingMaterial = new(); }
+
+    private async Task SaveMaterial()
+    {
+        if (string.IsNullOrWhiteSpace(editingMaterial.MaterialName)) return;
+        isSavingMaterial = true;
+        StateHasChanged();
+        try
+        {
+            await PricingService.SaveMaterialTypeAsync(editingMaterial);
+            CloseMaterialModal();
+            materialTypes = await PricingService.GetAllMaterialTypesAsync();
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка: {ex.Message}"); }
+        finally { isSavingMaterial = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteMaterial(MaterialTypeDto material)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Удалить тип материала '{material.MaterialName}'?"))
+        {
+            await PricingService.DeleteMaterialTypeAsync(material.Id);
+            materialTypes = await PricingService.GetAllMaterialTypesAsync();
+        }
+    }
+
+    private void ShowAddServiceModal() { editingService = new ServiceDto { IsExtraService = false, SortOrder = services.Count + 1 }; showServiceModal = true; }
+    private void EditService(ServiceDto service)
+    {
+        editingService = new ServiceDto { Id = service.Id, Name = service.Name, Description = service.Description, IsExtraService = service.IsExtraService, SortOrder = service.SortOrder };
+        showServiceModal = true;
+    }
+    private void CloseServiceModal() { showServiceModal = false; editingService = new(); }
+
+    private async Task SaveService()
+    {
+        if (string.IsNullOrWhiteSpace(editingService.Name)) return;
+        isSavingService = true;
+        StateHasChanged();
+        try
+        {
+            await PricingService.SaveServiceAsync(editingService);
+            CloseServiceModal();
+            services = await PricingService.GetAllServicesAsync();
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка: {ex.Message}"); }
+        finally { isSavingService = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteService(ServiceDto service)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Удалить услугу '{service.Name}'?"))
+        {
+            await PricingService.DeleteServiceAsync(service.Id);
+            services = await PricingService.GetAllServicesAsync();
+        }
+    }
+
+    private async Task ShowAddServiceToStoreModal()
+    {
+        selectedServiceId = 0;
+        newServicePrice = 0;
+        availableServices = await PricingService.GetAvailableServicesForStoreAsync(selectedStoreId);
+        showAddServiceModal = true;
+    }
+
+    private void CloseAddServiceModal()
+    {
+        showAddServiceModal = false;
+    }
+
+    private async Task AddServiceToStore()
+    {
+        if (selectedServiceId == 0 || newServicePrice <= 0) return;
+
+        await PricingService.AddServiceToStoreAsync(selectedStoreId, selectedServiceId, newServicePrice);
+        CloseAddServiceModal();
+        await LoadPrices();
+    }
+
+    private async Task RemoveServiceFromStore(ServicePriceDto price)
+    {
+        if (price.Id.HasValue && await JSRuntime.InvokeAsync<bool>("confirm", $"Удалить '{price.ServiceName}' из магазина?"))
+        {
+            await PricingService.RemoveServiceFromStoreAsync(price.Id.Value);
+            await LoadPrices();
+        }
+    }
+}

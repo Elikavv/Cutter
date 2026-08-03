@@ -3,6 +3,7 @@ using System;
 using Cutter.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Cutter.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260717135633_AddCuttingServicesAndPrices")]
+    partial class AddCuttingServicesAndPrices
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -256,9 +259,6 @@ namespace Cutter.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("DefaultCuttingServiceId")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Descr")
                         .HasColumnType("text");
 
@@ -267,8 +267,6 @@ namespace Cutter.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DefaultCuttingServiceId");
 
                     b.ToTable("MaterialType");
                 });
@@ -552,16 +550,6 @@ namespace Cutter.Migrations
                     b.Navigation("MaterialType");
                 });
 
-            modelBuilder.Entity("Cutter.Data.DBModels+MaterialType", b =>
-                {
-                    b.HasOne("Cutter.Data.CuttingServiceModel", "DefaultCuttingService")
-                        .WithMany("MaterialTypes")
-                        .HasForeignKey("DefaultCuttingServiceId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("DefaultCuttingService");
-                });
-
             modelBuilder.Entity("Cutter.Data.StoreItem", b =>
                 {
                     b.HasOne("Cutter.Data.DBModels+Items", "Item")
@@ -668,11 +656,6 @@ namespace Cutter.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("Cutter.Data.CuttingServiceModel", b =>
-                {
-                    b.Navigation("MaterialTypes");
                 });
 
             modelBuilder.Entity("Cutter.Data.DBModels+Items", b =>

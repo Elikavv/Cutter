@@ -48,9 +48,11 @@ namespace Cutter.Data
 
             // 🔗 Навигация: какая цена реза в каких магазинах
             public ICollection<StoreMaterialCutPrice> StoreMaterialCutPrices { get; set; } = new List<StoreMaterialCutPrice>();
+
+            // 🔗 НОВОЕ: Услуга по умолчанию для этого типа материала
+            public int? DefaultCuttingServiceId { get; set; }
+            public CuttingServiceModel? DefaultCuttingService { get; set; }
         }
-
-
 
         [Table("CuttingPlan")]
         public class CutPlan

@@ -501,6 +501,36 @@ h1, h2, h3, h4, h5, h6 {
     cursor: not-allowed;
 }
 
+.lemana-tabs .nav-link {
+    color: #495057 !important;
+    background-color: #f8f9fa !important;
+    border: none !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 12px 24px !important;
+    font-weight: 500 !important;
+    margin-right: 4px !important;
+    transition: all 0.3s ease !important;
+}
+
+.lemana-tabs .nav-link.active {
+    background-color: #0055A4 !important; /* Синий Лемана */
+    color: #fff !important;
+    border-bottom: 3px solid #FFA500 !important; /* Оранжевый акцент */
+}
+
+.lemana-tabs .nav-link:hover {
+    background-color: #e9ecef !important;
+    color: #0055A4 !important;
+}
+
+.lemana-tabs .nav-link.active:hover {
+    background-color: #004494 !important;
+}
+
+.lemana-tabs .nav-link i {
+    font-size: 1.1rem;
+}
+
 
 /* Адаптивность */
 @media (max-width: 768px) {

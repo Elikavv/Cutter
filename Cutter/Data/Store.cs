@@ -21,5 +21,7 @@
         public ICollection<StoreItem> StoreItems { get; set; } = new List<StoreItem>();
 
         public ICollection<StoreMaterialCutPrice> StoreMaterialCutPrices { get; set; } = new List<StoreMaterialCutPrice>();
+        public ICollection<StoreServicePrice> StoreServicePrices { get; set; } = new List<StoreServicePrice>();
+    
     }
 }
