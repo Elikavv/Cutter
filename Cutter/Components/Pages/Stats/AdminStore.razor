@@ -1,225 +1,200 @@
 ﻿@page "/stats/admin"
 @attribute [Authorize(Roles = "AdminStore, AdminSuper")]
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Cutter.Data
-@using Newtonsoft.Json
-@inject ApplicationDbContext Db
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Cutter.Services
+@using System.Security.Claims
+@inject IStoreStatsService StatsService
+@inject IStorePricingService PricingService
+@inject AuthenticationStateProvider AuthProvider
+@inject IJSRuntime JS 
 
-<PageTitle>Статистика — Администратор</PageTitle>
+<PageTitle>Статистика материалов</PageTitle>
 
-<div class="container py-4">
-    <h2>📊 Сводка по листам за период</h2>
+<div class="container-fluid py-4 px-4">
+    <h2 class="mb-4" style="color: #0055A4;">📊 Сводная статистика по материалам</h2>
 
-    <!-- Панель фильтров -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="input-group">
-                <span class="input-group-text">С</span>
-                <InputDate @bind-Value="StartDate" class="form-control" />
-                <span class="input-group-text">по</span>
-                <InputDate @bind-Value="EndDate" class="form-control" />
-                <button class="btn btn-outline-secondary" @onclick="LoadData">Применить</button>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-primary" @onclick="@( () => SetDateRange("Week") )">Неделя</button>
-                <button type="button" class="btn btn-primary" 
-                    @onclick="@(() => SetDateRange("Month"))">
-                    Месяц
-                </button>
-                <button type="button" class="btn btn-primary" 
-                    @onclick="@(() => SetDateRange("HalfYear"))">
-                    Полгода
-                </button>
-                <button type="button" class="btn btn-outline-secondary" @onclick="ResetFilters">Сбросить</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Информация о периоде -->
-    @if (groupedEntries.Any())
+    @if (isLoading)
     {
-        <div class="alert alert-info mb-4">
-            <strong>Период:</strong> @StartDate.ToString("dd.MM.yyyy") — @EndDate.ToString("dd.MM.yyyy")<br />
-            <strong>Записей:</strong> @groupedEntries.Count<br />
-            <strong>Всего листов:</strong> @groupedEntries.Sum(g => g.TotalQuantity)<br />
-            <strong>Общая стоимость:</strong> <span class="fw-bold">@grandTotal.ToString("N2") ₽</span>
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border" role="status" style="color: #0055A4;">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
         </div>
     }
+    else if (statsData != null)
+    {
+        <!-- KPI Карточки (Сразу виден итог) -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #0055A4 0%, #0077C8 100%);">
+                    <div class="card-body">
+                        <h6 class="text-uppercase small opacity-75 mb-1">Всего листов</h6>
+                        <h2 class="mb-0 fw-bold">@statsData.TotalSheets</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #F58220 0%, #FF9F43 100%);">
+                    <div class="card-body">
+                        <h6 class="text-uppercase small opacity-75 mb-1">Общая стоимость</h6>
+                        <h2 class="mb-0 fw-bold">@statsData.TotalCost.ToString("N0") ₽</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #2C3E50 0%, #34495E 100%);">
+                    <div class="card-body">
+                        <h6 class="text-uppercase small opacity-75 mb-1">Уникальных типов</h6>
+                        <h2 class="mb-0 fw-bold">@statsData.UniqueTypes</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #27AE60 0%, #2ECC71 100%);">
+                    <div class="card-body">
+                        <h6 class="text-uppercase small opacity-75 mb-1">Средняя цена листа</h6>
+                        <h2 class="mb-0 fw-bold">@statsData.AveragePricePerSheet.ToString("N0") ₽</h2>
+                    </div>
+                </div>
+            </div
+        </div>
 
-    <!-- Таблица сгруппированных листов -->
-    <div class="table-responsive">
-        <table class="table table-lemanapro table-striped table-hover">
-            <thead>
-                <tr>
-                    <th style="cursor: pointer;" @onclick="() => SortBy(nameof(GroupedSheetEntry.SheetName))">
-                        Название листа @GetSortIndicator(nameof(GroupedSheetEntry.SheetName))
-                    </th>
-                    <th style="cursor: pointer;" @onclick="() => SortBy(nameof(GroupedSheetEntry.Price))">
-                        Цена за ед. @GetSortIndicator(nameof(GroupedSheetEntry.Price))
-                    </th>
-                    <th style="cursor: pointer;" @onclick="() => SortBy(nameof(GroupedSheetEntry.TotalQuantity))">
-                        Кол-во @GetSortIndicator(nameof(GroupedSheetEntry.TotalQuantity))
-                    </th>
-                    <th style="cursor: pointer;" @onclick="() => SortBy(nameof(GroupedSheetEntry.TotalSum))">
-                        Сумма @GetSortIndicator(nameof(GroupedSheetEntry.TotalSum))
-                    </th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (isLoading)
-                {
-                    <tr>
-                        <td colspan="4" class="text-center">Загрузка...</td>
-                    </tr>
-                }
-                else if (!groupedEntries.Any())
-                {
-                    <tr>
-                        <td colspan="4" class="text-center">Нет данных за выбранный период</td>
-                    </tr>
-                }
-                else
-                {
-                    @foreach (var entry in sortedEntries)
-                    {
+        <!-- Панель фильтров -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold small text-muted">ПЕРИод</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light">С</span>
+                            <input type="date" class="form-control" @bind="startDate" />
+                            <span class="input-group-text bg-light">по</span>
+                            <input type="date" class="form-control" @bind="endDate" />
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label fw-bold small text-muted">БЫСТРЫЙ ВЫБОР</label>
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn btn-outline-primary" @onclick="() => SetDateRange(7)">Неделя</button>
+                            <button type="button" class="btn btn-outline-primary" @onclick="() => SetDateRange(30)">Месяц</button>
+                            <button type="button" class="btn btn-outline-primary" @onclick="() => SetDateRange(180)">Полгода</button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="ResetFilters">Сбросить</button>
+                            <button type="button" class="btn text-white ms-2" style="background-color: #0055A4;" @onclick="LoadData">
+                                🔄 Применить
+                            </button>
+                            <button type="button" class="btn btn-success ms-2" @onclick="ExportToExcel" disabled="@(isLoading || currentStoreId == null)">
+                                📊 Выгрузить в Excel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Таблица сгруппированных листов -->
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold text-white" style="background-color: #2C3E50;">
+                📋 Детализация по наименованиям
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
                         <tr>
-                            <td>@entry.SheetName</td>
-                            <td class="text-nowrap">@entry.Price.ToString("N2") ₽</td>
-                            <td>@entry.TotalQuantity</td>
-                            <td class="fw-bold text-nowrap text-start">@entry.TotalSum.ToString("N2") ₽</td>
+                            <th style="width: 40%; cursor: pointer;" @onclick="@(() => SortBy("SheetName"))">
+                                Название листа @GetSortIndicator("SheetName")
+                            </th>
+                            <th style="width: 20%; cursor: pointer; text-align: right;" @onclick="@(() => SortBy("Price"))">
+                                Цена за ед. @GetSortIndicator("Price")
+                            </th>
+                            <th style="width: 20%; cursor: pointer; text-align: right;" @onclick="@(() => SortBy("TotalQuantity"))">
+                                Кол-во (шт) @GetSortIndicator("TotalQuantity")
+                            </th>
+                            <th style="width: 20%; cursor: pointer; text-align: right;" @onclick="@(() => SortBy("TotalSum"))">
+                                Общая сумма @GetSortIndicator("TotalSum")
+                            </th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        @if (!sortedEntries.Any())
+                        {
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">
+                                    Нет данных за выбранный период
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var entry in sortedEntries)
+                            {
+                                <tr>
+                                    <td class="fw-bold">@entry.SheetName</td>
+                                    <td class="text-end">@entry.Price.ToString("N0") ₽</td>
+                                    <td class="text-end">
+                                        <span class="badge bg-primary fs-6">@entry.TotalQuantity</span>
+                                    </td>
+                                    <td class="text-end fw-bold" style="color: #0055A4;">@entry.TotalSum.ToString("N0") ₽</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    @if (sortedEntries.Any())
+                    {
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td class="text-end" style="color: #F58220;">ИТОГО:</td>
+                                <td></td>
+                                <td class="text-end">@statsData.TotalSheets</td>
+                                <td class="text-end" style="color: #F58220; font-size: 1.1em;">@statsData.TotalCost.ToString("N0") ₽</td>
+                            </tr>
+                        </tfoot>
                     }
-                }
-            </tbody>
-            @if (groupedEntries.Any())
-            {
-                <tfoot>
-                    <tr>
-                        <td colspan="2" class="text-end"><strong>Итого:</strong></td>
-                        <td><strong>@groupedEntries.Sum(g => g.TotalQuantity)</strong></td>
-                        <td class="fw-bold text-start">@grandTotal.ToString("N2") ₽</td>
-                    </tr>
-                </tfoot>
-            }
-        </table>
-    </div>
+                </table>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
-    private DateTime StartDate { get; set; }
-    private DateTime EndDate { get; set; }
     private bool isLoading = true;
-
-    // Модель группировки: уникальная связка Название + Цена
-    private class GroupedSheetEntry
-    {
-        public string SheetName { get; set; } = "—";
-        public double Price { get; set; }
-        public int TotalQuantity { get; set; }
-        public double TotalSum => TotalQuantity * Price;
-    }
-
-    private List<GroupedSheetEntry> groupedEntries = new();
-    private double grandTotal => groupedEntries.Sum(x => x.TotalSum);
+    private DateTime startDate = DateTime.Today.AddMonths(-1);
+    private DateTime endDate = DateTime.Today;
+    private StoreStatsResult? statsData;
+    private string? currentUserId;
+    private Guid? currentStoreId;
 
     // Сортировка
-    private string? currentSortColumn;
-    private bool isSortAscending = true;
-
-    private IEnumerable<GroupedSheetEntry> sortedEntries
-    {
-        get
-        {
-            var query = groupedEntries.AsQueryable();
-            if (string.IsNullOrEmpty(currentSortColumn)) return query;
-
-            var property = typeof(GroupedSheetEntry).GetProperty(currentSortColumn);
-            if (property == null) return query;
-
-            query = isSortAscending
-                ? query.OrderBy(x => property.GetValue(x))
-                : query.OrderByDescending(x => property.GetValue(x));
-
-            return query;
-        }
-    }
+    private string sortColumn = "TotalSum"; // По умолчанию сортируем по сумме
+    private bool sortAscending = false;     // По умолчанию по убыванию
 
     protected override async Task OnInitializedAsync()
     {
-        EndDate = DateTime.Now;
-        StartDate = EndDate.AddMonths(-1); // По умолчанию — месяц
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(currentUserId))
+        {
+            currentStoreId = await PricingService.GetUserStoreIdAsync(currentUserId);
+        }
         await LoadData();
     }
 
     private async Task LoadData()
     {
+        if (string.IsNullOrEmpty(currentUserId)) return;
+
         isLoading = true;
         StateHasChanged();
 
         try
         {
-            var cutPlans = await Db.CutPlan
-                .Include(cp => cp.User)
-                .Where(cp => cp.CreateDate >= StartDate && cp.CreateDate <= EndDate.Date.AddDays(1).AddTicks(-1))
-                .ToListAsync();
-
-            var allSheets = new List<(string Name, double Price, int Quantity)>();
-
-            foreach (var cp in cutPlans)
-            {
-                if (string.IsNullOrWhiteSpace(cp.CuttingPlan)) continue;
-
-                List<CuttingPlan>? planList;
-                try
-                {
-                    planList = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (planList == null) continue;
-
-                foreach (var plan in planList) // ← Обрабатываем каждый CuttingPlan в массиве
-                {
-                    if (plan.SheetLayouts == null) continue;
-
-                    foreach (var layout in plan.SheetLayouts)
-                    {
-                        var sheet = layout.Sheet;
-                        allSheets.Add((
-                            Name: sheet.Name ?? "Без названия",
-                            Price: sheet.Price,
-                            Quantity: sheet.Quantity
-                        ));
-                    }
-                }
-            }
-
-            // Группируем по НАЗВАНИЮ + ЦЕНЕ
-            groupedEntries = allSheets
-                .GroupBy(x => new { x.Name, x.Price })
-                .Select(g => new GroupedSheetEntry
-                    {
-                        SheetName = g.Key.Name,
-                        Price = g.Key.Price,
-                        TotalQuantity = g.Sum(x => x.Quantity)
-                    })
-                .OrderByDescending(x => x.TotalSum) // По умолчанию — по сумме (можно убрать, если мешает сортировке)
-                .ToList();
-
-            // Сбрасываем пользовательскую сортировку при загрузке
-            currentSortColumn = null;
+            statsData = await StatsService.GetSheetStatsAsync(currentUserId, startDate, endDate);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Ошибка: {ex.Message}");
-            groupedEntries = new();
+            Console.WriteLine($"Ошибка загрузки статистики: {ex.Message}");
+            statsData = new StoreStatsResult();
         }
         finally
         {
@@ -228,44 +203,72 @@
         }
     }
 
-    private void SortBy(string columnName)
+    private void SetDateRange(int days)
     {
-        if (currentSortColumn == columnName)
-        {
-            isSortAscending = !isSortAscending;
-        }
-        else
-        {
-            currentSortColumn = columnName;
-            isSortAscending = true;
-        }
-        StateHasChanged();
-    }
-
-    private string GetSortIndicator(string columnName)
-    {
-        if (currentSortColumn != columnName) return "";
-        return isSortAscending ? " ▲" : " ▼";
-    }
-
-    private void SetDateRange(string range)
-    {
-        var now = DateTime.Now;
-        EndDate = now;
-        StartDate = range switch
-        {
-            "Week" => now.AddDays(-7),
-            "Month" => now.AddMonths(-1),
-            "HalfYear" => now.AddMonths(-6),
-            _ => now.AddMonths(-1)
-        };
+        endDate = DateTime.Today;
+        startDate = endDate.AddDays(-days);
         _ = LoadData();
     }
 
     private void ResetFilters()
     {
-        EndDate = DateTime.Now;
-        StartDate = EndDate.AddMonths(-1);
+        endDate = DateTime.Today;
+        startDate = endDate.AddMonths(-1);
+        sortColumn = "TotalSum";
+        sortAscending = false;
         _ = LoadData();
+    }
+
+    private void SortBy(string columnName)
+    {
+        if (sortColumn == columnName)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = columnName;
+            sortAscending = false; // Новое поле всегда начинается с убывания (самые большие сверху)
+        }
+        StateHasChanged();
+    }
+
+    private List<SheetStatEntry> sortedEntries
+    {
+        get
+        {
+            if (statsData?.Entries == null) return new();
+
+            return sortColumn switch
+            {
+                "SheetName" => sortAscending 
+                    ? statsData.Entries.OrderBy(x => x.SheetName).ToList() 
+                    : statsData.Entries.OrderByDescending(x => x.SheetName).ToList(),
+                "Price" => sortAscending 
+                    ? statsData.Entries.OrderBy(x => x.Price).ToList() 
+                    : statsData.Entries.OrderByDescending(x => x.Price).ToList(),
+                "TotalQuantity" => sortAscending 
+                    ? statsData.Entries.OrderBy(x => x.TotalQuantity).ToList() 
+                    : statsData.Entries.OrderByDescending(x => x.TotalQuantity).ToList(),
+                "TotalSum" => sortAscending 
+                    ? statsData.Entries.OrderBy(x => x.TotalSum).ToList() 
+                    : statsData.Entries.OrderByDescending(x => x.TotalSum).ToList(),
+                _ => statsData.Entries.OrderByDescending(x => x.TotalSum).ToList()
+            };
+        }
+    }
+
+    private MarkupString GetSortIndicator(string columnName)
+    {
+        if (sortColumn != columnName) return new MarkupString("");
+        return new MarkupString(sortAscending ? " <span style='color: #0055A4;'>▲</span>" : " <span style='color: #0055A4;'>▼</span>");
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (!currentStoreId.HasValue) return;
+
+        var url = $"/api/export/store-stats?storeId={currentStoreId}&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}";
+        await JS.InvokeVoidAsync("open", url, "_blank");
     }
 }

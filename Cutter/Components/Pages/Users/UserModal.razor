@@ -31,11 +31,11 @@
                             <button class="btn btn-outline-secondary" type="button" @onclick="TogglePasswordVisibility" title="Показать/скрыть">
                                 @if (ShowPassword)
                                 {
-                                    <span>🙈</span> <!-- Скрыть -->
+                                    <span></span>
                                 }
                                 else
                                 {
-                                    <span>👁️</span> <!-- Показать -->
+                                    <span>👁️</span>
                                 }
                             </button>
                             <button class="btn btn-outline-secondary" type="button" @onclick="GeneratePassword" title="Сгенерировать">🎲</button>
@@ -50,15 +50,44 @@
                             }
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Магазин *</label>
-                        <select class="form-control" @bind="User.StoreId">
-                            @foreach (var store in Stores)
+
+                    @if (User.Role == "Manager")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Магазины (множественный выбор для менеджера) *</label>
+                            <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                @foreach (var store in Stores)
+                                {
+                                    var isChecked = SelectedStoreIds.Contains(store.Id);
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                               id="store_@store.Id"
+                                               checked="@isChecked"
+                                               @onchange="() => ToggleStore(store.Id)" />
+                                        <label class="form-check-label" for="store_@store.Id">
+                                            @store.Name
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                            @if (!Stores.Any())
                             {
-                                <option value="@store.Id">@store.Name</option>
+                                <small class="text-muted">Нет доступных магазинов</small>
                             }
-                        </select>
-                    </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Магазин *</label>
+                            <select class="form-control" @bind="User.StoreId">
+                                @foreach (var store in Stores)
+                                {
+                                    <option value="@store.Id">@store.Name</option>
+                                }
+                            </select>
+                        </div>
+                    }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="Close">Отмена</button>
@@ -74,14 +103,26 @@
     [Parameter] public string Title { get; set; } = "";
     [Parameter] public ApplicationUser User { get; set; } = new();
     [Parameter] public List<Store> Stores { get; set; } = new();
-    [Parameter] public bool IsAdminSuperAvailable { get; set; } = false;
     [Parameter] public List<string> AvailableRoles { get; set; } = new();
     [Parameter] public EventCallback OnClose { get; set; }
-    [Parameter] public EventCallback<(ApplicationUser User, string Password)> OnSave { get; set; }
-
+    [Parameter] public EventCallback<(ApplicationUser User, string Password, List<Guid> StoreIds)> OnSave { get; set; }
 
     private string Password { get; set; } = "";
-    private bool ShowPassword { get; set; } = false; // 👈 Управляет типом input
+    private bool ShowPassword { get; set; } = false;
+    private HashSet<Guid> SelectedStoreIds { get; set; } = new();
+
+    private void ToggleStore(Guid storeId)
+    {
+        if (SelectedStoreIds.Contains(storeId))
+            SelectedStoreIds.Remove(storeId);
+        else
+            SelectedStoreIds.Add(storeId);
+    }
+
+    public void SetSelectedStores(IEnumerable<Guid> storeIds)
+    {
+        SelectedStoreIds = new HashSet<Guid>(storeIds);
+    }
 
     private void TogglePasswordVisibility()
     {
@@ -94,13 +135,13 @@
         var random = new Random();
         Password = new string(Enumerable.Repeat(chars, 12)
             .Select(s => s[random.Next(s.Length)]).ToArray());
-        ShowPassword = true; // 👈 После генерации — показываем пароль
+        ShowPassword = true;
     }
 
     private async Task Submit()
     {
         await OnClose.InvokeAsync();
-        await OnSave.InvokeAsync((User, Password));
+        await OnSave.InvokeAsync((User, Password, SelectedStoreIds.ToList()));
     }
 
     private async Task Close()

@@ -2,128 +2,307 @@
 @attribute [Authorize(Roles = "Cashier, AdminSuper")]
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Newtonsoft.Json
-@using Cutter.Data
-@inject ApplicationDbContext DbContext
-@inject NavigationManager Navigation
+@using Cutter.Services
+@inject ICashierService CashierService
+@inject IJSRuntime JSRuntime
 
-<PageTitle>Панель кассира</PageTitle>
+<PageTitle>Дашборд кассира</PageTitle>
+
+<script src="js/chart.js"></script>
 
 <div class="container mt-4">
-    <h2>Панель кассира</h2>
+    <h2 class="mb-4" style="color: #0055A4;">📊 Дашборд кассира</h2>
 
     @if (isLoading)
     {
         <div class="d-flex justify-content-center my-5">
-            <div class="spinner-border text-primary" role="status">
+            <div class="spinner-border" role="status" style="color: #0055A4;">
                 <span class="visually-hidden">Загрузка...</span>
             </div>
         </div>
     }
-    else
+    else if (dashboardData != null)
     {
         <!-- Фильтр дат -->
-        <div class="card mb-4">
+        <div class="card mb-4 shadow-sm">
             <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-5">
-                        <label class="form-label">Начальная дата</label>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Начальная дата</label>
                         <input type="date" class="form-control" @bind="startDate" />
                     </div>
-                    <div class="col-md-5">
-                        <label class="form-label">Конечная дата</label>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Конечная дата</label>
                         <input type="date" class="form-control" @bind="endDate" />
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary w-100" @onclick="LoadData">Фильтровать</button>
+                    <div class="col-md-4">
+                        <button class="btn w-100 text-white" style="background-color: #0055A4;" @onclick="LoadData">
+                            🔄 Обновить
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Статистика -->
+        <!-- Графики -->
         <div class="row g-4 mb-4">
-            <div class="col-md-3">
-                <div class="card border-primary">
-                    <div class="card-body text-center">
-                        <h6 class="card-title text-primary">Бланков</h6>
-                        <h4>@stats.CuttingPlansCount</h4>
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-bold text-white" style="background-color: #0055A4;">
+                        💰 Выручка по дням
+                    </div>
+                    <div class="card-body">
+                        <canvas id="dailyRevenueChart" height="120"></canvas>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-success">
-                    <div class="card-body text-center">
-                        <h6 class="card-title text-success">Товаров</h6>
-                        <h4>@stats.TotalProducts</h4>
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-bold text-white" style="background-color: #0055A4;">
+                        📦 Структура выручки
+                    </div>
+                    <div class="card-body d-flex align-items-center justify-content-center">
+                        <canvas id="revenueStructureChart" height="200"></canvas>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-info">
-                    <div class="card-body text-center">
-                        <h6 class="card-title text-info">Сумма товаров</h6>
-                        <h4>@stats.TotalProductAmount.ToString("N0") ₽</h4>
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-bold text-white" style="background-color: #0055A4;">
+                        💳 Статус оплаты
                     </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card border-warning">
-                    <div class="card-body text-center">
-                        <h6 class="card-title text-warning">Сумма резов</h6>
-                        <h4>@stats.TotalCutAmount.ToString("N0") ₽</h4>
+                    <div class="card-body d-flex align-items-center justify-content-center">
+                        <canvas id="paymentStatusChart" height="200"></canvas>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Таблица распиловок -->
-        <h4>Бланки (@filteredPlans.Count)</h4>
-        @if (filteredPlans.Any())
-        {
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead class="table-light">
-                        <tr>
-                            <th># бланка</th>
-                            <th>Дата</th>
-                            <th>Товаров</th>
-                            <th>Сумма товаров</th>
-                            <th>Сумма резов</th>
-                            <th>Оплачено</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in filteredPlans)
+        <!-- Статистика (карточки) -->
+        <div class="row g-4 mb-4">
+            <!-- Всего бланков -->
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #0055A4 0%, #0077C8 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Всего бланков</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalPlans</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">📋</div>
+                        </div>
+                        @if (dashboardData.Stats.UnpaidPlans > 0)
                         {
-                             <tr>
-                                <td><a href="api/pdf/@item.GUUID" target="_blank"><code style="color:#d63384!important">@item.CutNum</code></a></td>
-                                <td>@item.CreateDate.ToString("dd.MM.yyyy HH:mm")</td>
-                                <td>@item.Products</td>
-                                <td>@item.ProductAmount.ToString("N0") ₽</td>
-                                <td>@item.CutAmount.ToString("N0") ₽</td>
-                                <td>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" role="switch"
-                                                style="cursor:pointer"
-                                               id="paid-@item.Id"
-                                               @bind="item.IsPaid"
-                                               @bind:after="() => SavePaidStatus(item)" />
-                                        <label class="form-check-label" for="paid-@item.Id">
-                                            @(item.IsPaid ? "Да" : "Нет")
-                                        </label>
-                                    </div>
-                                </td>
-                            </tr>
+                            <div class="mt-3">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span>Оплачено: @dashboardData.Stats.PaidPlans</span>
+                                    <span class="fw-bold">@dashboardData.Stats.PaymentPercentage.ToString("F0")%</span>
+                                </div>
+                                <div class="progress" style="height: 6px; background: rgba(255,255,255,0.2);">
+                                    <div class="progress-bar bg-warning" style="width: @dashboardData.Stats.PaymentPercentage%"></div>
+                                </div>
+                                <small class="opacity-75 mt-1 d-block">
+                                    ⚠️ Не оплачено: <strong>@dashboardData.Stats.UnpaidPlans</strong>
+                                </small>
+                            </div>
                         }
-                    </tbody>
-                </table>
+                        else
+                        {
+                            <small class="opacity-75 mt-2 d-block">✅ Все бланки оплачены</small>
+                        }
+                    </div>
+                </div>
             </div>
+
+            <!-- Сумма товаров (с разбивкой по оплате) -->
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #F58220 0%, #FF9F43 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Сумма товаров</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalProductAmount.ToString("N0") ₽</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">📦</div>
+                        </div>
+                        <div class="mt-3 small">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>✅ Оплачено:</span>
+                                <span class="fw-bold">@dashboardData.Stats.ProductPaidAmount.ToString("N0") ₽</span>
+                            </div>
+                            @if (dashboardData.Stats.ProductUnpaidAmount > 0)
+                            {
+                                <div class="d-flex justify-content-between">
+                                    <span>❌ Не оплачено:</span>
+                                    <span class="fw-bold">@dashboardData.Stats.ProductUnpaidAmount.ToString("N0") ₽</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Сумма резов (с разбивкой по оплате, без "Всего выручка") -->
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #2C3E50 0%, #34495E 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Сумма резов</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalCutAmount.ToString("N0") ₽</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">✂️</div>
+                        </div>
+                        <div class="mt-3 small">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>✅ Оплачено:</span>
+                                <span class="fw-bold">@dashboardData.Stats.CutPaidAmount.ToString("N0") ₽</span>
+                            </div>
+                            @if (dashboardData.Stats.CutUnpaidAmount > 0)
+                            {
+                                <div class="d-flex justify-content-between">
+                                    <span>❌ Не оплачено:</span>
+                                    <span class="fw-bold">@dashboardData.Stats.CutUnpaidAmount.ToString("N0") ₽</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Оплачено (итоговая сумма + неоплаченная внизу) -->
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #27AE60 0%, #2ECC71 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1"> Оплачено всего</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.PaidAmount.ToString("N0") ₽</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">💵</div>
+                        </div>
+                        @if (dashboardData.Stats.UnpaidAmount > 0)
+                        {
+                            var totalAmount = dashboardData.Stats.PaidAmount + dashboardData.Stats.UnpaidAmount;
+                            var paidPercent = totalAmount > 0 ? (double)(dashboardData.Stats.PaidAmount * 100m / totalAmount) : 0;
+                            <div class="mt-3">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span>Получено: @paidPercent.ToString("F0")%</span>
+                                    <span class="fw-bold">@dashboardData.Stats.UnpaidAmount.ToString("N0") ₽</span>
+                                </div>
+                                <div class="progress" style="height: 6px; background: rgba(255,255,255,0.2);">
+                                    <div class="progress-bar bg-warning" style="width: @paidPercent%"></div>
+                                </div>
+                                <small class="opacity-75 mt-1 d-block">
+                                    ⚠️ К оплате: <strong>@dashboardData.Stats.UnpaidAmount.ToString("N0") ₽</strong>
+                                </small>
+                            </div>
+                        }
+                        else
+                        {
+                            <small class="opacity-75 mt-2 d-block">✅ Вся сумма получена</small>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица распиловок по дням -->
+        <h4 class="mb-3" style="color: #0055A4;">📋 Реестр бланков</h4>
+        @if (dashboardData.GroupedPlans.Any())
+        {
+            @foreach (var dayGroup in dashboardData.GroupedPlans.OrderBy(x => x.Date).ToList())
+            {
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap text-white"
+                         style="background: linear-gradient(135deg, #0055A4 0%, #0077C8 100%);">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="fw-bold fs-5">
+                                📅 @dayGroup.Date.ToString("dd MMMM yyyy", new System.Globalization.CultureInfo("ru-RU"))
+                            </span>
+                            <span class="badge fs-6" style="background-color: #F58220;">
+                                Всего: <strong>@dayGroup.DailyTotal.ToString("N0") ₽</strong>
+                            </span>
+                        </div>
+                        <div class="d-flex gap-2 mt-2 mt-md-0">
+                            @if (dayGroup.DailyPaid > 0)
+                            {
+                                <span class="badge bg-success fs-6">
+                                    ✅ Оплачено: @dayGroup.DailyPaid.ToString("N0") ₽
+                                    <small class="opacity-75">(@dayGroup.PaidCount шт.)</small>
+                                </span>
+                            }
+                            @if (dayGroup.DailyUnpaid > 0)
+                            {
+                                <span class="badge bg-danger fs-6">
+                                    ❌ Не оплачено: @dayGroup.DailyUnpaid.ToString("N0") ₽
+                                    <small class="opacity-75">(@dayGroup.UnpaidCount шт.)</small>
+                                </span>
+                            }
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 12%"># бланка</th>
+                                    <th style="width: 10%">Время</th>
+                                    <th style="width: 8%">Товаров</th>
+                                    <th style="width: 15%">Сумма товаров</th>
+                                    <th style="width: 15%">Сумма резов</th>
+                                    <th style="width: 15%">Общая сумма</th>
+                                    <th style="width: 10%">Статус</th>
+                                    <th style="width: 15%">Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in dayGroup.Plans)
+                                {
+                                    var rowClass = item.IsPaid ? "" : "table-danger";
+                                    <tr class="@rowClass">
+                                        <td>
+                                            <a href="api/pdf/@item.GUUID" target="_blank" class="text-decoration-none">
+                                                <code style="color:#0055A4!important; font-weight:bold;">@item.CutNum</code>
+                                            </a>
+                                        </td>
+                                        <td>@item.CreateDate.ToString("HH:mm")</td>
+                                        <td>@item.Products</td>
+                                        <td>@item.ProductAmount.ToString("N0") ₽</td>
+                                        <td>@item.CutAmount.ToString("N0") ₽</td>
+                                        <td class="fw-bold">@((item.ProductAmount + item.CutAmount).ToString("N0")) ₽</td>
+                                        <td>
+                                            @if (item.IsPaid)
+                                            {
+                                                <span class="badge bg-success">✅ Оплачен</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">❌ Не оплачен</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                       style="cursor:pointer;"
+                                                       id="paid-@item.Id"
+                                                       @bind="item.IsPaid"
+                                                       @bind:after="() => SavePaidStatus(item)" />
+                                                <label class="form-check-label small" for="paid-@item.Id">
+                                                    @(item.IsPaid ? "Оплачен" : "Отметить")
+                                                </label>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
         }
         else
         {
-            <div class="alert alert-info">Нет распиловок по выбранному фильтру.</div>
+            <div class="alert alert-info text-center">Нет распиловок по выбранному фильтру.</div>
         }
     }
 </div>
@@ -132,12 +311,22 @@
     private bool isLoading = true;
     private DateTime startDate = DateTime.Today.AddDays(-7);
     private DateTime endDate = DateTime.Today;
-    private List<CutPlanForCashier> filteredPlans = new();
-    private CashierStats stats = new();
+    private CashierDashboardData? dashboardData;
+    private bool shouldUpdateCharts = false; // Флаг: нужно ли обновлять графики
 
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Вызываем обновление графиков ТОЛЬКО здесь и ТОЛЬКО если данные загружены
+        if (shouldUpdateCharts && dashboardData != null)
+        {
+            shouldUpdateCharts = false; // Сбрасываем флаг
+            await UpdateCharts();
+        }
     }
 
     private async Task LoadData()
@@ -145,111 +334,163 @@
         isLoading = true;
         StateHasChanged();
 
-        var plans = await DbContext.CutPlan
-            .Where(cp => cp.IsSave && cp.CreateDate >= startDate && cp.CreateDate <= endDate.AddDays(1).AddTicks(-1))
-            .ToListAsync();
-
-        filteredPlans = new List<CutPlanForCashier>();
-
-        int totalProducts = 0;
-        decimal totalProductAmount = 0;
-        decimal totalCutAmount = 0;
-
-        foreach (var p in plans)
-        {
-            var (products, productAmount, cutAmount) = CalculateStats(p.CuttingPlan);
-            totalProducts += products;
-            totalProductAmount += productAmount;
-            totalCutAmount += cutAmount;
-
-            filteredPlans.Add(new CutPlanForCashier
-            {
-                Id = p.Id,
-                GUUID = p.GUUID,
-                CutNum = p.NumCut,
-                CreateDate = p.CreateDate,
-                IsPaid = p.IsPaid,
-                Products = products,
-                ProductAmount = productAmount,
-                CutAmount = cutAmount
-            });
-        }
-
-        stats = new CashierStats
-        {
-            CuttingPlansCount = plans.Count,
-            TotalProducts = totalProducts,
-            TotalProductAmount = totalProductAmount,
-            TotalCutAmount = totalCutAmount
-        };
-
-        isLoading = false;
-        StateHasChanged();
-    }
-
-    private (int products, decimal productAmount, decimal cutAmount) CalculateStats(string? json)
-    {
-        if (string.IsNullOrEmpty(json)) return (0, 0, 0);
         try
         {
-            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
-            if (plans == null) return (0, 0, 0);
-
-            int totalProducts = 0;
-            decimal totalProductAmount = 0;
-            decimal totalCutAmount = 0;
-
-            foreach (var plan in plans)
-            {
-                foreach (var layout in plan.SheetLayouts)
-                {
-                    // Предположим, что `Sheet.Price` — это цена за лист (т.е. товар)
-                    totalProducts += 1;
-                    totalProductAmount += (decimal)layout.Sheet.Price;
-
-                    // Резы
-                    //var cutCount = layout.CutLines.Count(cl => cl.IsCut);
-                    var cutCount = layout.CutLines.Count();
-                    totalCutAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
-                }
-            }
-
-            return (totalProducts, totalProductAmount, totalCutAmount);
+            dashboardData = await CashierService.GetDashboardDataAsync(startDate, endDate);
         }
-        catch
+        catch (Exception ex)
         {
-            return (0, 0, 0);
+            Console.WriteLine($"Ошибка: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Ошибка загрузки: {ex.Message}");
         }
+        finally
+        {
+            isLoading = false;
+            shouldUpdateCharts = true; // Устанавливаем флаг: пора рисовать графики
+            StateHasChanged();
+        }
+    }
+
+    private async Task UpdateCharts()
+    {
+        if (dashboardData == null) return;
+
+        await JSRuntime.InvokeVoidAsync("updateCashierCharts",
+            dashboardData.ChartLabels,
+            dashboardData.ChartProductData,
+            dashboardData.ChartCutData,
+            dashboardData.Stats.TotalProductAmount,
+            dashboardData.Stats.TotalCutAmount,
+            dashboardData.Stats.PaidPlans,
+            dashboardData.Stats.UnpaidPlans);
     }
 
     private async Task SavePaidStatus(CutPlanForCashier item)
     {
-        var plan = await DbContext.CutPlan.FindAsync(item.Id);
-        if (plan != null)
+        var success = await CashierService.UpdatePaidStatusAsync(item.Id, item.IsPaid);
+        if (success)
         {
-            plan.IsPaid = item.IsPaid;
-            plan.ModifyDate = DateTime.Now;
-            await DbContext.SaveChangesAsync();
+            await LoadData(); // Это установит shouldUpdateCharts = true
+        }
+        else
+        {
+            item.IsPaid = !item.IsPaid;
+            StateHasChanged();
         }
     }
-
-    private class CutPlanForCashier
-    {
-        public int Id { get; set; }
-        public string GUUID { get; set; } = string.Empty;
-        public string CutNum { get; set; } = string.Empty;
-        public DateTime CreateDate { get; set; }
-        public bool IsPaid { get; set; }
-        public int Products { get; set; }
-        public decimal ProductAmount { get; set; }
-        public decimal CutAmount { get; set; }
-    }
-
-    private class CashierStats
-    {
-        public int CuttingPlansCount { get; set; }
-        public int TotalProducts { get; set; }
-        public decimal TotalProductAmount { get; set; }
-        public decimal TotalCutAmount { get; set; }
-    }
 }
+
+<script>
+    (function() {
+        let dailyChartInstance = null;
+        let structureChartInstance = null;
+        let paymentChartInstance = null;
+
+        window.updateCashierCharts = function (labels, productData, cutData, totalProduct, totalCut, paidCount, unpaidCount) {
+            const colorBlue = '#0055A4';
+            const colorBlueLight = 'rgba(0, 85, 164, 0.7)';
+            const colorOrange = '#F58220';
+            const colorOrangeLight = 'rgba(245, 130, 32, 0.7)';
+            const colorGreen = '#27AE60';
+            const colorGreenLight = 'rgba(39, 174, 96, 0.7)';
+            const colorRed = '#E74C3C';
+            const colorRedLight = 'rgba(231, 76, 60, 0.7)';
+
+            if (dailyChartInstance) dailyChartInstance.destroy();
+            if (structureChartInstance) structureChartInstance.destroy();
+            if (paymentChartInstance) paymentChartInstance.destroy();
+
+            // 1. График выручки по дням
+            const ctxDaily = document.getElementById('dailyRevenueChart').getContext('2d');
+            dailyChartInstance = new Chart(ctxDaily, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Товары', data: productData, backgroundColor: colorBlueLight, borderColor: colorBlue, borderWidth: 2 },
+                        { label: 'Резы', data: cutData, backgroundColor: colorOrangeLight, borderColor: colorOrange, borderWidth: 2 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                    plugins: {
+                        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('ru-RU') + ' ₽' } }
+                    }
+                }
+            });
+
+            // 2. График структуры выручки
+            const ctxStructure = document.getElementById('revenueStructureChart').getContext('2d');
+            structureChartInstance = new Chart(ctxStructure, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Товары (Материал)', 'Услуги (Резы)'],
+                    datasets: [{
+                        data: [totalProduct, totalCut],
+                        backgroundColor: [colorBlueLight, colorOrangeLight],
+                        borderColor: [colorBlue, colorOrange],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                                    return context.label + ': ' + context.parsed.toLocaleString('ru-RU') + ' ₽ (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 3. График статуса оплаты
+            const ctxPayment = document.getElementById('paymentStatusChart').getContext('2d');
+            paymentChartInstance = new Chart(ctxPayment, {
+                type: 'pie',
+                data: {
+                    labels: ['✅ Оплачено', '❌ Не оплачено'],
+                    datasets: [{
+                        data: [paidCount, unpaidCount],
+                        backgroundColor: [colorGreenLight, colorRedLight],
+                        borderColor: [colorGreen, colorRed],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                callback: function(value, index) {
+                                    const data = this.chart.data.datasets[0].data;
+                                    const total = data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((data[index] / total) * 100).toFixed(1) : 0;
+                                    return value + ' (' + percentage + '%)';
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                                    return context.label + ': ' + context.parsed + ' бланков (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
+    })();
+</script>

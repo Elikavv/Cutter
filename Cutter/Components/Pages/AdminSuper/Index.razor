@@ -2,15 +2,13 @@
 @attribute [Authorize(Roles = "AdminSuper")]
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Newtonsoft.Json
-@using Cutter.Data
-@inject ApplicationDbContext DbContext
+@using Cutter.Services
+@inject CuttingService CuttingService
 
 <PageTitle>Панель суперадминистратора</PageTitle>
 
 <div class="container mt-4">
-    <h2>Панель суперадминистратора — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+    <h2 class="mb-4">Панель суперадминистратора</h2>
 
     @if (isLoading)
     {
@@ -20,17 +18,27 @@
             </div>
         </div>
     }
-    else
+    else if (dashboard != null)
     {
         <!-- Фильтры -->
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3">
+                    <!-- Фильтр по периоду -->
+                    <div class="col-md-3">
+                        <label class="form-label">Дата с</label>
+                        <input type="date" class="form-control" @bind="startDate" @bind:after="ApplyFiltersAsync" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата по</label>
+                        <input type="date" class="form-control" @bind="endDate" @bind:after="ApplyFiltersAsync" />
+                    </div>
+
                     <!-- Фильтр по магазинам -->
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Магазины</label>
-                        <select class="form-select" @onchange="OnStoreFilterChange" multiple>
-                            @foreach (var store in allStores)
+                        <select class="form-select" @onchange="OnStoreFilterChange" multiple size="1">
+                            @foreach (var store in dashboard.AllStores)
                             {
                                 <option value="@store.Id" selected="@(selectedStoreIds.Contains(store.Id))">@store.Name</option>
                             }
@@ -38,10 +46,10 @@
                     </div>
 
                     <!-- Фильтр по пользователям -->
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Пользователи</label>
-                        <select class="form-select" @onchange="OnUserFilterChange" multiple>
-                            @foreach (var user in allUsers)
+                        <select class="form-select" @onchange="OnUserFilterChange" multiple size="1">
+                            @foreach (var user in dashboard.AllUsers)
                             {
                                 <option value="@user.Id" selected="@(selectedUserIds.Contains(user.Id))">@user.UserName (@user.Store?.Name)</option>
                             }
@@ -49,16 +57,17 @@
                     </div>
 
                     <!-- Фильтр по статусу -->
-                    <div class="col-md-4">
-                        <label class="form-label">Статус</label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="showSaved" @onchange="@(e => ToggleStatusFilter(true, e))" checked="@showSaved" />
+                    <div class="col-md-12 mt-3">
+                        <label class="form-label d-block">Статус</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="showSaved" @onchange="@(e => ToggleStatusFilterAsync(true, e))" checked="@showSaved" />
                             <label class="form-check-label" for="showSaved">Сохранено</label>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="showDrafts" @onchange="@(e => ToggleStatusFilter(false, e))" checked="@showDrafts" />
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="showDrafts" @onchange="@(e => ToggleStatusFilterAsync(false, e))" checked="@showDrafts" />
                             <label class="form-check-label" for="showDrafts">Черновики</label>
                         </div>
+                        <button class="btn btn-sm btn-outline-secondary ms-3" @onclick="ResetFilters">Сбросить фильтры</button>
                     </div>
                 </div>
             </div>
@@ -70,7 +79,7 @@
                 <div class="card border-primary">
                     <div class="card-body text-center">
                         <h6 class="card-title text-primary">Распиловок</h6>
-                        <h4>@filteredPlans.Count</h4>
+                        <h4>@dashboard.Summary.TotalPlans</h4>
                     </div>
                 </div>
             </div>
@@ -78,34 +87,34 @@
                 <div class="card border-success">
                     <div class="card-body text-center">
                         <h6 class="card-title text-success">Резов</h6>
-                        <h4>@totalCuts</h4>
+                        <h4>@dashboard.Summary.TotalCuts</h4>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="card border-info">
                     <div class="card-body text-center">
-                        <h6 class="card-title text-info">Сумма резов</h6>
-                        <h4>@totalCutAmount.ToString("N0") ₽</h4>
+                        <h6 class="card-title text-info">Сумма услуг</h6>
+                        <h4>@dashboard.Summary.TotalServicesAmount.ToString("N0") ₽</h4>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-secondary">
+                <div class="card border-warning">
                     <div class="card-body text-center">
-                        <h6 class="card-title text-secondary">Листов</h6>
-                        <h4>@totalSheets</h4>
+                        <h6 class="card-title text-warning">Сумма листов</h6>
+                        <h4>@dashboard.Summary.TotalSheetsAmount.ToString("N0") ₽</h4>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Таблица распиловок -->
-        <h4>Распиловки (@filteredPlans.Count)</h4>
-        @if (filteredPlans.Any())
+        <h4>Распиловки (@dashboard.Plans.Count)</h4>
+        @if (dashboard.Plans.Any())
         {
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
                             <th>Номер</th>
@@ -113,20 +122,16 @@
                             <th>Пользователь</th>
                             <th>Статус</th>
                             <th>Резов</th>
-                            <th>Сумма резов</th>
+                            <th>Сумма услуг</th>
+                            <th>Сумма листов</th>
+                            <th>Итого</th>
                             <th>Время</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var item in filteredPlans)
+                        @foreach (var item in dashboard.Plans)
                         {
-                            var (cuts, cutAmount) = CalculateCutStats(item.CuttingPlan);
-                            var storeName = allStoresDict.GetValueOrDefault(item.StoreId, "—");
-                            var userName = allUsersDict.GetValueOrDefault(item.UserId, "—");
-
-                            <tr class="@(item.IsSave ? "" : "table-warning")"
-                            style="cursor: pointer;"
-                            @onclick="@(() => Navigation.NavigateTo("/cutting-plan/" + item.GUUID))">
+                            <tr class="@(item.IsSave ? "" : "table-warning")" style="cursor: pointer;" @onclick="@(() => Navigation.NavigateTo("/cut/" + item.GUUID))">
                                 <td>
                                     <code>@item.NumCut</code>
                                     @if (!item.IsSave)
@@ -134,8 +139,8 @@
                                         <span title="Черновик" class="ms-1">📝</span>
                                     }
                                 </td>
-                                <td>@storeName</td>
-                                <td>@userName</td>
+                                <td>@item.StoreName</td>
+                                <td>@item.UserName</td>
                                 <td>
                                     @if (item.IsSave)
                                     {
@@ -146,9 +151,11 @@
                                         <span class="badge bg-warning text-dark">Черновик</span>
                                     }
                                 </td>
-                                <td>@cuts</td>
-                                <td>@cutAmount.ToString("N0") ₽</td>
-                                <td>@item.CreateDate.ToString("HH:mm")</td>
+                                <td>@item.TotalCuts</td>
+                                <td>@item.TotalServicesAmount.ToString("N0") ₽</td>
+                                <td>@item.TotalSheetsAmount.ToString("N0") ₽</td>
+                                <td class="fw-bold">@item.TotalAmount.ToString("N0") ₽</td>
+                                <td>@item.CreateDate.ToString("dd.MM HH:mm")</td>
                             </tr>
                         }
                     </tbody>
@@ -166,135 +173,51 @@
     [Inject] public NavigationManager Navigation { get; set; } = default!;
 
     private bool isLoading = true;
-    private List<CutPlanItem> allPlans = new();
-    private List<Store> allStores = new();
-    private List<ApplicationUser> allUsers = new();
-    private Dictionary<Guid, string> allStoresDict = new();
-    private Dictionary<string, string> allUsersDict = new();
+    private AdminDashboardDto? dashboard;
 
-    // Фильтры
+    // Состояние фильтров
+    private DateTime startDate = DateTime.Today;
+    private DateTime endDate = DateTime.Today;
     private HashSet<Guid> selectedStoreIds = new();
     private HashSet<string> selectedUserIds = new();
     private bool showSaved = true;
     private bool showDrafts = true;
 
-    // Отфильтрованные данные
-    private List<CutPlanItem> filteredPlans => allPlans
-        .Where(p =>
-            (selectedStoreIds.Count == 0 || selectedStoreIds.Contains(p.StoreId)) &&
-            (selectedUserIds.Count == 0 || selectedUserIds.Contains(p.UserId)) &&
-            ((p.IsSave && showSaved) || (!p.IsSave && showDrafts))
-        ).ToList();
-
-    private int totalCuts = 0;
-    private decimal totalCutAmount = 0;
-    private int totalSheets = 0;
-
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        // Первичная загрузка данных
+        await ApplyFiltersAsync();
     }
 
-    private async Task LoadData()
+    // Единый метод применения фильтров через сервис
+    private async Task ApplyFiltersAsync()
     {
         isLoading = true;
         StateHasChanged();
 
-        var today = DateTime.Today;
-
-        // Загружаем всё
-        var dbPlans = await DbContext.CutPlan
-            .Where(cp => cp.CreateDate.Date == today)
-            .ToListAsync();
-
-        allStores = await DbContext.Stores.ToListAsync();
-        allStoresDict = allStores.ToDictionary(s => s.Id, s => s.Name);
-
-        var usersWithStore = await DbContext.Users.Include(u => u.Store).ToListAsync();
-        allUsers = usersWithStore;
-        allUsersDict = usersWithStore.ToDictionary(u => u.Id, u => u.UserName);
-
-        // Преобразуем в обогащённые объекты
-        allPlans = new List<CutPlanItem>();
-        foreach (var p in dbPlans)
-        {
-            var user = usersWithStore.FirstOrDefault(u => u.Id == p.UserId);
-            allPlans.Add(new CutPlanItem
-                {
-                    Id = p.Id,
-                    GUUID = p.GUUID,
-                    UserId = p.UserId,
-                    StoreId = user?.StoreId ?? Guid.Empty,
-                    CuttingPlan = p.CuttingPlan,
-                    CreateDate = p.CreateDate,
-                    IsSave = p.IsSave,
-                    NumCut = p.NumCut
-                });
-        }
-
-        // Инициализируем фильтры
-        selectedStoreIds = new(allStores.Select(s => s.Id));
-        selectedUserIds = new(allUsers.Select(u => u.Id));
-
-        RecalculateStats();
-
-        isLoading = false;
-        StateHasChanged();
-    }
-
-    private void RecalculateStats()
-    {
-        totalCuts = 0;
-        totalCutAmount = 0;
-        totalSheets = 0;
-
-        foreach (var plan in filteredPlans)
-        {
-            var (cuts, cutAmount) = CalculateCutStats(plan.CuttingPlan);
-            totalCuts += cuts;
-            totalCutAmount += cutAmount;
-
-            if (!string.IsNullOrEmpty(plan.CuttingPlan))
-            {
-                try
-                {
-                    var cps = JsonConvert.DeserializeObject<List<CuttingPlan>>(plan.CuttingPlan);
-                    totalSheets += cps?.Sum(cp => cp.SheetLayouts.Count) ?? 0;
-                }
-                catch { }
-            }
-        }
-    }
-
-    private (int cuts, decimal amount) CalculateCutStats(string? json)
-    {
-        if (string.IsNullOrEmpty(json)) return (0, 0);
         try
         {
-            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
-            if (plans == null) return (0, 0);
-
-            int totalCuts = 0;
-            decimal totalAmount = 0;
-
-            foreach (var p in plans)
-            {
-                foreach (var layout in p.SheetLayouts)
-                {
-                    var cutCount = layout.CutLines.Count();
-                    totalCuts += cutCount;
-                    totalAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
-                }
-            }
-            return (totalCuts, totalAmount);
+            dashboard = await CuttingService.GetAdminDashboardAsync(
+                startDate,
+                endDate,
+                selectedStoreIds,
+                selectedUserIds,
+                showSaved,
+                showDrafts
+            );
         }
-        catch
+        catch (Exception ex)
         {
-            return (0, 0);
+            Console.WriteLine($"Ошибка загрузки дашборда: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
         }
     }
 
-    // Обработчики фильтров
+    // Обработчики изменений фильтров
     private void OnStoreFilterChange(ChangeEventArgs e)
     {
         selectedStoreIds.Clear();
@@ -306,7 +229,7 @@
                     selectedStoreIds.Add(id);
             }
         }
-        RecalculateStats();
+        _ = ApplyFiltersAsync();
     }
 
     private void OnUserFilterChange(ChangeEventArgs e)
@@ -316,27 +239,33 @@
         {
             selectedUserIds.UnionWith(values);
         }
-        RecalculateStats();
+        _ = ApplyFiltersAsync();
     }
 
-    private void ToggleStatusFilter(bool isSaved, ChangeEventArgs e)
+    private async Task ToggleStatusFilterAsync(bool isSaved, ChangeEventArgs e)
     {
         if (isSaved)
             showSaved = (bool)(e.Value ?? false);
         else
             showDrafts = (bool)(e.Value ?? false);
-        RecalculateStats();
+
+        await ApplyFiltersAsync();
     }
 
-    private class CutPlanItem
+    private async Task ResetFilters()
     {
-        public int Id { get; set; }
-        public string GUUID { get; set; } = string.Empty;
-        public string UserId { get; set; } = string.Empty;
-        public Guid StoreId { get; set; }
-        public string? CuttingPlan { get; set; }
-        public DateTime CreateDate { get; set; }
-        public bool IsSave { get; set; }
-        public string NumCut { get; set; } = string.Empty;
+        startDate = DateTime.Today;
+        endDate = DateTime.Today;
+
+        if (dashboard != null)
+        {
+            selectedStoreIds = new(dashboard.AllStores.Select(s => s.Id));
+            selectedUserIds = new(dashboard.AllUsers.Select(u => u.Id));
+        }
+
+        showSaved = true;
+        showDrafts = true;
+
+        await ApplyFiltersAsync();
     }
 }

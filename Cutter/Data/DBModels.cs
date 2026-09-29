@@ -63,6 +63,8 @@ namespace Cutter.Data
             public required string GUUID { get; set; }
             [Required]
             public string? UserId { get; set; }
+            [Column("modifier_id")]
+            public string? ModifierId { get; set; }
             [Column(TypeName = "jsonb")]
             public string? CuttingPlan { get; set; }
             [Column("create_date")]
@@ -72,6 +74,7 @@ namespace Cutter.Data
             [Column("is_save")]
             public bool IsSave { get; set; } = false;
             public virtual ApplicationUser User { get; set; }
+            public virtual ApplicationUser Modifier { get; set; }
             public string? StaffId { get; set; }
             public string NumCut { get; set; } = string.Empty;
             public string? Invoice { get; set; }

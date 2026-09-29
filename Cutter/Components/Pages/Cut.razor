@@ -1,281 +1,1026 @@
 ﻿@page "/cut"
-@page "/cut/{Hashid}"
+@page "/cut/{HashId}"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Cutter.Data
 @using Cutter.Services
 @using System.Text.Json
 @using System.Security.Claims
-@using static Cutter.Data.DBModels
+@using System.Text
+@using static Cutter.Services.PdfCuttingService
 @inject CuttingService CuttingService
+@inject IStorePricingService PricingService
 @inject NavigationManager NavigationManager
 @inject CuttingState State
 @inject SheetService SheetService
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthProvider
 @inject IStoreContextService StoreContext
+@inject IConstraintProfileService ConstraintService
 @implements IDisposable
 @attribute [Authorize]
-
-
 @rendermode InteractiveServer
 
-<PageTitle>Новый раскрой</PageTitle>
+<PageTitle>Раскрой материалов</PageTitle>
 
-<h1>Оптимизация раскроя листовых материалов</h1>
-
-<div class="row">
-    <div class="col-md-3 mb-3">
-        @*<label class="form-label">Штриход или артикул</label>*@
-        <input @ref="searchInput"
-        @bind="searchCode"
-        @bind:event="oninput"
-        @onkeydown="HandleKeyDown"
-        placeholder="Штрихкод или артикул" class="form-control"/>
-        @if (showErrorSKU)
-        {
-            <div class="invalid-feedback d-block">
-                Товар не найден
-            </div>
-        }
-    </div>
-    <div class="row mb-3">
-        <div class="col-md-3">
-            <label class="form-label">№ договора</label>
-            <input 
-                @bind="Invoice"
-                placeholder="№ договора" class="form-control" />
-        </div>
-    </div>
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <label class="form-label">Доступные листы:</label>
-            @*<InputSelect @bind-Value="model.SelectedSheetIds" multiple class="form-select"
-                             onchange="this.dispatchEvent(new CustomEvent('input', { bubbles: true }))">
-                    @foreach (var sheet in availableSheets)
-                    {
-                        <option value="@sheet">
-                            @sheet.Name (@sheet.Length x @sheet.Width mm)
-                        </option>
-                    }
-                </InputSelect>*@
-            <select class="form-select" 
-            @onchange="@(e => AddSelectedSheet(e))">
-                <option value="">-- Выберите лист --</option>
-                @foreach (var sheet in availableSheets)
-                {
-                    <option value="@sheet.Id">
-                        @sheet.Name (@sheet.Length x @sheet.Width mm) - @sheet.SKU
-                    </option>
-                }
-            </select>
-        </div>
-    </div>
-
-    <!-- Список выбранных листов -->
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <label class="form-label">Выбранные листы:</label>
-            <div class="selected-sheets-container p-2 border rounded">
-                @if (SCut.Where(x => x.Sheet != null).Any())
-                {
-                    <ul class="list-group sheet-list">
-                        @foreach (var sheet in SCut)
-                        {
-                            <li class="@ActiveSheet(sheet.IsActive)">
-                                <div class="w-100 text-start sheet-li"
-                                @onclick="() => ActiveSheet(sheet)">
-                                    <strong>@sheet.Sheet.Name</strong><br>
-                                    Размер: @sheet.Sheet.Length x @sheet.Sheet.Width mm<br>
-                                    Артикукл: @sheet.Sheet.SKU
-                                </div>
-                                <div class="mb-2 me-4">
-                                    <strong>Кол-во</strong><br>
-                                    <div class="d-flex">
-                                        <div class="btn btn-secondary btn-sm rounded-circle me-2 pointer-event"
-                                        @onclick="() => MinusSheet(sheet)">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-dash-square" viewBox="0 0 16 16">
-                                                <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
-                                                <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8" />
-                                            </svg>
-                                        </div>
-                                        <div class="border border-secondary px-2 rounded me-2">
-                                            @sheet.QuantitySheet
-                                        </div>
-                                        <div class="btn btn-secondary btn-sm rounded-circle"
-                                        @onclick="() => PlusSheet(sheet)">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
-                                                <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
-                                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4" />
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button class="btn btn-sm btn-primary position-relative" title="Добавить деталь"
-                                @onclick="() => OpenAddDetailModal(sheet)">
-                                    @if (sheet.Details.Sum(x => x.Quantity) > 0)
-                                    {
-
-                                        <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">
-                                            @sheet.Details.Sum(x => x.Quantity)
-                                        </span>
-                                    }
-
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
-                                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16" />
-                                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4" />
-                                    </svg>
-
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger ms-3" title="Удалить"
-                                @onclick="() => RemoveSheet(sheet)">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
-                                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
-                                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
-                                    </svg>
-                                </button>
-                            </li>
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <div class="text-muted">Не выбрано ни одного листа</div>
-                }
-            </div>
-        </div>
-    </div>
-</div>
-<div class="row">
-    @if (SCut.Count() > 0)
+<div class="container-fluid mt-4">
+    @if (isLocked)
     {
-
-        <div class="mt-4">
-            <h3>Список деталей</h3>
-
-            @if (SCut.Where(x => x.IsActive).FirstOrDefault().Details.Count == 0)
-            {
-                <p>Нет добавленных деталей</p>
-            }
-            else
-            {
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>№</th>
-                            <th>Размеры (мм)</th>
-                            <th>Количество</th>
-                            <th>Поворот</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var detail in SCut.Where(x => x.IsActive).FirstOrDefault().Details)
-                        {
-                            <tr>
-                                <td>@detail.Name</td>
-                                <td>@detail.Length x @detail.Width</td>
-                                <td>@detail.Quantity</td>
-                                <td>@(detail.CanRotate ? "Да" : "Нет")</td>
-                                <td>
-                                    <button class="btn btn-sm btn-danger"
-                                    @onclick="@(() => RemoveDetail(detail))">
-                                        Удалить
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                @if (SelectedSheets.Count() > 0)
-                {
-                    <button class="btn btn-success" @onclick="CalculateCutting">Рассчитать раскрой</button>
-                }
-            }
-
+        <div class="alert alert-danger d-flex align-items-center" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-lock-fill me-2" viewBox="0 0 16 16">
+                <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2m3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2" />
+            </svg>
+            <div>
+                <strong>Раскрой от @(CreateDate?.ToString("dd.MM.yyyy")) заблокирован!</strong> Редактирование запрещено для расчётов предыдущих дней.
+            </div>
         </div>
     }
-</div>
-<!-- Modal для добавления детали -->
-@if (showAddDetailModal)
-{
-    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Добавить деталь для листа: @targetSheetForNewDetail?.Sheet.Name</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-check-circle-fill me-2" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z" />
+            </svg>
+            <div>@successMessage</div>
+            <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+        </div>
+    }
+
+    @*<h2 class="mb-4">Оптимизация раскроя листовых материалов</h2>*@
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        @*<h2 class="mb-0">Оптимизация раскроя листовых материалов</h2>*@
+        @if (!string.IsNullOrEmpty(numCut))
+        {
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary fs-5">
+                    Бланк №@currentShiftNumber
+                </span>
+                <small class="text-muted">@numCut</small>
+                @if (CreateDate.HasValue && CreateDate.Value.Date < DateTime.Today)
+                {
+                    <span class="badge bg-warning text-dark ms-2">
+                        @(CreateDate?.ToString("dd.MM.yyyy"))
+                    </span>
+                }
+            </div>
+        }
+        else if (currentShiftNumber > 0)
+        {
+            <span class="badge bg-secondary fs-6">
+                Следующий номер в смене: №@currentShiftNumber
+            </span>
+        }
+    </div>
+
+    <!-- Сворачиваемая секция для дополнительных полей -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <button class="btn btn-link p-0 text-decoration-none"
+                    @onclick="() => showAdditionalFields = !showAdditionalFields"
+                    style="color: #0055A4;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                     class="bi bi-chevron-@(showAdditionalFields ? "up" : "down") me-1"
+                     viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708" />
+                </svg>
+                <strong>Дополнительно</strong>
+            </button>
+
+            @if (showAdditionalFields)
+            {
+                <div class="mt-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <label class="form-label mb-0">№ договора:</label>
+                        </div>
+                        <div class="col">
+                            <input @bind="Invoice"
+                                   disabled="@isLocked"
+                                   placeholder="Введите номер договора"
+                                   class="form-control form-control-sm"
+                                   style="max-width: 300px;" />
+                        </div>
+                    </div>
                 </div>
-                <div class="modal-body" @onkeydown="HandleModalKeyDown">
+            }
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Выберите режим добавления позиции</h5>
+        </div>
+        <div class="card-body">
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="modeRadio" id="modeMaterial"
+                       checked="@(CurrentMode == 1)"
+                       @onchange="() => OnModeChanged(1)"
+                       disabled="@isLocked">
+                <label class="form-check-label" for="modeMaterial">Материал из базы</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="modeRadio" id="modeOwn"
+                       checked="@(CurrentMode == 2)"
+                       @onchange="() => OnModeChanged(2)"
+                       disabled="@isLocked">
+                <label class="form-check-label" for="modeOwn">Товар клиента</label>
+            </div>
+        </div>
+    </div>
+
+
+
+    <div class="card mb-4">
+        <div class="card-body">
+            @if (CurrentMode == 1)
+            {
+                @*<h5>Материал из базы</h5>*@
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label">Поиск листа (Штрихкод/Артикул)</label>
+                        <input @ref="searchInput" @key="CurrentMode" @bind="searchCode" @bind:event="oninput" @onkeydown="HandleKeyDown" disabled="@isLocked" placeholder="Введите и нажмите Enter" class="form-control" />
+                        @if (showErrorSKU)
+                        {
+                            <div class="invalid-feedback d-block">Товар не найден</div>
+                        }
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Или выберите из списка</label>
+                        <select class="form-select" @onchange="AddSelectedSheet" disabled="@isLocked">
+                            <option value="">-- Выберите лист --</option>
+                            @foreach (var sheet in availableSheets)
+                            {
+                                <option value="@sheet.Id">@sheet.Name (@sheet.Length x @sheet.Width мм) - @sheet.SKU</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <small class="text-muted d-block">Добавьте детали через кнопку "Детали", затем нажмите "Расчёт"</small>
+                    </div>
+                </div>
+            }
+            else if (CurrentMode == 2)
+            {
+                <h5>Товар клиента — добавление услуг</h5>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Выберите услугу из справочника</label>
+                        <select class="form-select @(NewOwnMaterialServiceId == 0 && hasValidationErrors ? "is-invalid" : "")" @bind="NewOwnMaterialServiceId" disabled="@isLocked">
+                            <option value="0">-- Выберите услугу --</option>
+                            @foreach (var service in availableStoreServices)
+                            {
+                                <option value="@service.ServiceId">@service.ServiceName (@service.Price.ToString("F2") ₽/ед.)</option>
+                            }
+                        </select>
+                        @if (NewOwnMaterialServiceId == 0 && hasValidationErrors)
+                        {
+                            <div class="invalid-feedback d-block">Выберите услугу</div>
+                        }
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Кол-во резов <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control @(NewOwnMaterialCuts == 0 && hasValidationErrors ? "is-invalid" : "")" @bind="NewOwnMaterialCuts" disabled="@isLocked" min="0" />
+                        @if (NewOwnMaterialCuts == 0 && hasValidationErrors)
+                        {
+                            <div class="invalid-feedback d-block">Укажите количество</div>
+                        }
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Таромест <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control @(NewOwnMaterialTaromest == 0 && hasValidationErrors ? "is-invalid" : "")" @bind="NewOwnMaterialTaromest" disabled="@isLocked" min="0" />
+                        @if (NewOwnMaterialTaromest == 0 && hasValidationErrors)
+                        {
+                            <div class="invalid-feedback d-block">Укажите количество</div>
+                        }
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary w-100" @onclick="AddOwnMaterialSource" disabled="@(isLocked || NewOwnMaterialServiceId == 0)">
+                            ➕ Добавить
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (SCut.Any(s => s.IsActive))
+    {
+        var activeSource = SCut.First(s => s.IsActive);
+        @if (activeSource.Constraints != null && availableConstraintProfiles.Any())
+        {
+            <div class="card mb-3 border-primary shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <span>⚙️ Ограничения: <strong>@activeSource.Sheet?.Name (@activeSource.Sheet?.SKU)</strong></span>
+                    <button class="btn btn-sm btn-light text-primary" @onclick="() => OpenProfileManager()">
+                        🛠 Управление всеми профилями
+                    </button>
+                </div>
+                <div class="card-body">
                     <div class="row g-3 align-items-center">
-                        <div class="col-3">
-                            <label class="form-label">Длина (мм):</label>
-                            <input type="number" class="form-control" @bind="NewDetailModal.Length" />
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted">Текущий профиль</label>
+                            <select class="form-select" @bind:get="activeSource.Constraints.Id" @bind:set="OnConstraintIdChanging">
+                                @foreach (var profile in availableConstraintProfiles)
+                                {
+                                    <option value="@profile.Id">@(profile.IsDefault ? "⭐ " : "")@profile.Name</option>
+                                }
+                            </select>
                         </div>
-                        <div class="col-3">
-                            <label class="form-label">Ширина (мм):</label>
-                            <input type="number" class="form-control" @bind="NewDetailModal.Width" />
-                        </div>
-                        <div class="col-3">
-                            <label class="form-label">Количество:</label>
-                            <input type="number" class="form-control" @bind="NewDetailModal.Quantity" />
-                        </div>
-                        <div class="col-3">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" @bind="NewDetailModal.CanRotate" />
-                                <label class="form-check-label">Поворот</label>
+                        <div class="col-md-8" @key="activeSource.Constraints.Id">
+                            <div class="d-flex flex-wrap gap-3 text-muted small">
+                                <span>🪚 Пила: <strong>@activeSource.Constraints.BladeWidth</strong> мм</span>
+                                <span>📏 Отступы: В:<strong>@activeSource.Constraints.MarginTop</strong> Н:<strong>@activeSource.Constraints.MarginBottom</strong> Л:<strong>@activeSource.Constraints.MarginLeft</strong> П:<strong>@activeSource.Constraints.MarginRight</strong></span>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        }
+    }
+
+    @if (SCut.Any())
+    {
+        <div class="card mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Добавленные позиции @(hasValidationErrors ? "⚠️ Есть незаполненные поля" : "")</h5>
+                <div class="d-flex flex-column gap-1">
+                    <span class="badge bg-dark fs-6">Листы: @SCut.Sum(s => s.SheetTotalPrice).ToString("F2") ₽</span>
+                    <span class="badge bg-success fs-6">Услуги: @SCut.Sum(s => s.ServicesTotalPrice).ToString("F2") ₽</span>
+                    <span class="badge bg-primary fs-6">Итого: @((SCut.Sum(s => s.SheetTotalPrice) + SCut.Sum(s => s.ServicesTotalPrice)).ToString("F2")) ₽</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle cutting-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 4%">№</th>
+                                <th style="width: 15%">Материал</th>
+                                <th style="width: 8%">Листов</th>
+                                <th style="width: 10%">Стоимость листа</th>
+                                <th style="width: 25%">Услуги</th>
+                                <th style="width: 8%">Таромест <span class="text-danger">*</span></th>
+                                
+
+                                <th style="width: 10%">Стоимость услуг</th>
+                                <th style="width: 10%">Итого</th>
+                                <th style="width: 12%">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var source in SCut)
+                            {
+                                bool hasErrorCuts = !source.IsOwnMaterial && source.CalculatedPlan == null && !source.Services.Any(s => s.Quantity > 0);
+                                bool hasErrorTaromest = !source.Details.Any() && source.ManualTaromest == 0;
+
+                                <tr class="@(source.IsActive ? "table-active" : "") @(hasErrorCuts || hasErrorTaromest ? "table-warning" : "")" @onclick="() => ActivateSource(source)">
+                                    <td>@(SCut.IndexOf(source) + 1)</td>
+                                    <td>
+                                        @if (source.IsOwnMaterial)
+                                        {
+                                            <span class="badge bg-secondary">Свой материал</span>
+                                        }
+                                        else
+                                        {
+                                            <strong>@source.Sheet?.Name</strong>
+
+                                            <br />
+                                            <small class="text-muted">@source.Sheet?.SKU</small>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!source.IsOwnMaterial && source.Sheet != null)
+                                        {
+                                            <div class="input-group input-group-sm" style="width: 80px;">
+                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => DecrementSheetQuantity(source)" disabled="@isLocked">-</button>
+                                                <input type="number" class="form-control text-center p-1" @bind="source.Sheet.Quantity" disabled="@isLocked" min="1" />
+                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => IncrementSheetQuantity(source)" disabled="@isLocked">+</button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                    </td>
+                                    <td class="text-muted">
+                                        @if (!source.IsOwnMaterial && source.Sheet != null)
+                                        {
+                                            <div>@source.SheetTotalPrice.ToString("F2") ₽</div>
+                                            <small class="text-muted">× @source.Sheet.Quantity шт.</small>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column gap-2">
+                                            @foreach (var svc in source.Services)
+                                            {
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge bg-light text-dark border">@svc.ServiceName</span>
+                                                    <span class="text-muted small">@svc.Price.ToString("F2") ₽ × </span>
+
+                                                    @if (svc.IsDefaultCuttingService && source.CalculatedPlan != null)
+                                                    {
+                                                        @if (source.IsCutCountManuallyEdited)
+                                                        {
+                                                            <div class="input-group input-group-sm" style="width: 100px;">
+                                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => DecrementServiceQuantity(source, svc)" disabled="@isLocked">-</button>
+                                                                <input type="number" class="form-control text-center p-1 fw-bold"
+                                                                       style="background-color: #fff3cd; border-color: #ffc107;"
+                                                                       @bind="svc.Quantity" @bind:event="oninput" disabled="@isLocked" min="0" />
+                                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => IncrementServiceQuantity(source, svc)" disabled="@isLocked">+</button>
+                                                            </div>
+                                                            <span class="badge bg-warning text-dark ms-1" title="Отредактировано вручную">✎</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-success text-white" style="min-width: 60px;">@svc.Quantity</span>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="input-group input-group-sm" style="width: 100px;">
+                                                            <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => DecrementServiceQuantity(source, svc)" disabled="@isLocked">-</button>
+                                                            <input type="number" class="form-control text-center p-1 @(svc.Quantity == 0 && hasValidationErrors ? "is-invalid" : "")"
+                                                                   @bind="svc.Quantity" @bind:event="oninput" disabled="@isLocked" min="0" />
+                                                            <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => IncrementServiceQuantity(source, svc)" disabled="@isLocked">+</button>
+                                                        </div>
+                                                    }
+
+                                                    @if (!svc.IsDefaultCuttingService && !isLocked)
+                                                    {
+                                                        <button class="btn btn-sm btn-outline-danger py-0 px-1" @onclick:stopPropagation @onclick="() => RemoveServiceFromSource(source, svc)" title="Удалить услугу">×</button>
+                                                    }
+                                                </div>
+                                            }
+
+                                            @if (!isLocked)
+                                            {
+                                                <div class="d-flex align-items-center gap-2 mt-1">
+                                                    <select class="form-select form-select-sm" style="width: 140px;" @bind="source.TempServiceIdToAdd">
+                                                        <option value="0">+ Доп. услуга</option>
+                                                        @foreach (var availSvc in availableStoreServices)
+                                                        {
+                                                            if (!source.Services.Any(s => s.ServiceId == availSvc.ServiceId))
+                                                            {
+                                                                <option value="@availSvc.ServiceId">@availSvc.ServiceName</option>
+                                                            }
+                                                        }
+                                                    </select>
+                                                    <button class="btn btn-sm" style="background-color: #0055A4; color: white; border: none;" @onclick:stopPropagation @onclick="() => AddServiceToSource(source)" disabled="@(source.TempServiceIdToAdd == 0)">Добавить</button>
+                                                </div>
+                                            }
+                                        </div>
+                                        @if (hasErrorCuts && hasValidationErrors)
+                                        {
+                                            <div class="text-danger small mt-1">️ Укажите количество резов</div>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (source.Details.Any())
+                                        {
+                                            <span class="badge bg-info text-dark">@source.Details.Sum(d => d.Quantity) шт.</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="input-group input-group-sm" style="width: 100px;">
+                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => DecrementTaromest(source)" disabled="@isLocked">-</button>
+                                                <input type="number" class="form-control text-center p-1 @(source.ManualTaromest == 0 && hasValidationErrors ? "is-invalid" : "")"
+                                                       @bind="source.ManualTaromest" @bind:event="oninput" disabled="@isLocked" min="0" />
+                                                <button class="btn btn-outline-secondary" @onclick:stopPropagation @onclick="() => IncrementTaromest(source)" disabled="@isLocked">+</button>
+                                            </div>
+                                        }
+                                        @if (hasErrorTaromest && hasValidationErrors)
+                                        {
+                                            <div class="text-danger small mt-1">⚠️ Укажите таромест</div>
+                                        }
+                                    </td>
+
+                                    <td class="text-primary fw-bold">
+                                        @source.ServicesTotalPrice.ToString("F2") ₽
+                                    </td>
+                                    <td class="fw-bold text-success">
+                                        @((source.SheetTotalPrice + source.ServicesTotalPrice).ToString("F2")) ₽
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column gap-1">
+                                            @if (!source.IsOwnMaterial && !isLocked)
+                                            {
+                                                <button class="btn btn-sm btn-primary" @onclick:stopPropagation @onclick="() => OpenDetailsModal(source)" title="Редактировать детали">
+                                                    📋 Детали @(source.Details.Any() ? $"({source.Details.Count})" : "")
+                                                </button>
+                                            }
+                                            @if (!source.IsOwnMaterial && source.Details.Any() && !isLocked)
+                                            {
+                                                <button class="btn btn-sm btn-success" @onclick:stopPropagation @onclick="() => CalculateForSource(source)" title="Рассчитать раскрой">
+                                                    ️ Расчёт
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation @onclick="() => RemoveSource(source)" disabled="@isLocked" title="Удалить позицию">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @if (activeSourceWithPlan != null && activeSourceWithPlan.CalculatedPlan != null)
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">📐 Просмотр раскроя: @activeSourceWithPlan.Sheet?.Name</h5>
+                    <span class="badge bg-light text-dark">
+                        Листов: @activeSourceWithPlan.CalculatedPlan.SheetLayouts.Where(x => !x.IsEmpty).Count() |
+                        Резов: @activeSourceWithPlan.CalculatedPlan.TotalCuts |
+                        Эффективность: @(activeSourceWithPlan.CalculatedPlan.TotalMaterialUsage.ToString("P1"))
+                    </span>
+                </div>
+                <div class="card-body">
+                    @foreach (var sheetLayout in activeSourceWithPlan.CalculatedPlan.SheetLayouts.Where(x => !x.IsEmpty))
+                    {
+                        <div class="mb-4">
+                            <h6>Лист: @sheetLayout.Sheet.Name (@sheetLayout.Sheet.Length × @sheetLayout.Sheet.Width мм) — Артикул: @sheetLayout.Sheet.SKU</h6>
+                            <div class="position-relative" style="border: 1px solid #ddd; background: #f8f9fa; border-radius: 8px; padding: 10px;">
+                                @((MarkupString)GenerateSheetSvgNormalized(sheetLayout))
+                            </div>
+                            <div class="mt-2 text-muted small">
+                                Деталей на листе: @sheetLayout.Details.Count |
+                                Использование материала: @(sheetLayout.MaterialUsage.ToString("P1")) |
+                                Резов: @sheetLayout.CutCount
+                            </div>
+
+                            <!-- Таблица деталей -->
+                            @if (sheetLayout.Details.Any())
+                            {
+                                <div class="mt-3">
+                                    <h6 class="mb-2">Детали на листе:</h6>
+                                    <table class="table table-sm table-bordered">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>№</th>
+                                                <th>Название</th>
+                                                <th>Длина (мм)</th>
+                                                <th>Ширина (мм)</th>
+                                                <th>Кол-во</th>
+                                                <th style="width: 30px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @{
+                                                var groups = sheetLayout.Details.GroupBy(d => new { d.Name, d.Length, d.Width }).ToList();
+                                            }
+                                            @foreach (var group in groups.Select((g, i) => new { Group = g, GroupIdx = i }))
+                                            {
+                                                <tr class="group-row" data-group="@group.GroupIdx" style="cursor: pointer;"
+                                                    onclick="toggleGroupRow(@group.GroupIdx)">
+                                                    <td>@(group.GroupIdx + 1)</td>
+                                                    <td>@group.Group.Key.Name</td>
+                                                    <td>@group.Group.Key.Length</td>
+                                                    <td>@group.Group.Key.Width</td>
+                                                    <td><span class="badge bg-primary">@group.Group.Count()</span></td>
+                                                    <td class="text-center">▼</td>
+                                                </tr>
+
+                                                // Подстроки с каждой конкретной деталью
+                                                int itemIdx = 0;
+                                                foreach (var detail in group.Group)
+                                                {
+                                                    var globalIdx = sheetLayout.Details.IndexOf(detail);
+                                                    <tr class="sub-row" data-group="@group.GroupIdx" data-idx="@globalIdx"
+                                                        style="display: none; background: #f8f9fa; cursor: pointer;"
+                                                        onclick="highlightDetail(@globalIdx)">
+                                                        <td></td>
+                                                        <td colspan="4" class="small">
+                                                            Деталь @(itemIdx + 1): X=@detail.X.ToString("F0"), Y=@detail.Y.ToString("F0")
+                                                            @(detail.Rotated ? " (можно вращать)" : "")
+                                                        </td>
+                                                        <td></td>
+                                                    </tr>
+                                                    itemIdx++;
+                                                }
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+
+                            @if (!String.IsNullOrEmpty(HashId))
+                            {
+                                <button class="btn btn-sm btn-outline-primary mt-2" @onclick="() => PrintSheetLayout(sheetLayout)">
+                                    🖨️ Печать листа
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (activeSourceWithPlan.CalculatedPlan.UnplacedDetails?.Any() == true)
+                    {
+                        <div class="alert alert-warning">
+                            <strong>Не размещено деталей:</strong>
+                            <ul class="mb-0 mt-2">
+                                @foreach (var d in activeSourceWithPlan.CalculatedPlan.UnplacedDetails)
+                                {
+                                    <li>@d.Name (@d.Width × @d.Length мм) — @d.Quantity шт.</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="d-flex justify-content-end gap-3 mb-5">
+            <button class="btn btn-lg text-white" style="background-color: #0055A4; color: white; border: none;" @onclick="() => PrintBlankInNewWindow(PdfPrintMode.Full)">
+                🖨️ Бланк + Раскрой
+            </button>
+            <button class="btn btn-lg btn-outline-primary" @onclick="() => PrintBlankInNewWindow(PdfPrintMode.BlankOnly)">
+                📄 Только Бланк
+            </button>
+            <button class="btn btn-lg btn-outline-success" @onclick="() => PrintBlankInNewWindow(PdfPrintMode.LayoutsOnly)">
+                📐 Только Раскрой
+            </button>
+            @*<button class="btn btn-success btn-lg" @onclick="SaveAllPlans">
+                💾 Сохранить
+            </button>*@
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info text-center">
+            Список позиций пуст. Выберите режим выше и добавьте материал или услугу.
+        </div>
+    }
+
+
+</div>
+
+@if (showDetailsModal && !isLocked && detailsModalSource != null)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Детали для: @detailsModalSource.Sheet?.Name</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDetailsModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">Добавлено деталей: @detailsModalBatch.Count</span>
+                        <button class="btn btn-sm btn-outline-primary" @onclick="AddDetailRow">
+                            ➕ Добавить строку
+                        </button>
+                    </div>
+
+                    @if (detailsModalBatch.Any())
+                    {
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 5%">№</th>
+                                    <th style="width: 20%">Название</th>
+                                    <th style="width: 20%">Длина (мм)</th>
+                                    <th style="width: 20%">Ширина (мм)</th>
+                                    <th style="width: 15%">Количество</th>
+                                    <th style="width: 10%">Поворот</th>
+                                    <th style="width: 10%"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < detailsModalBatch.Count; i++)
+                                {
+                                    var idx = i;
+                                    var detail = detailsModalBatch[idx];
+
+                                    <tr @key="detail">
+                                        <td>@(idx + 1)</td>
+
+                                        <!-- Название (буквы разрешены) -->
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" class="form-control form-control-sm"
+                                                       @bind="detail.Name"
+                                                       placeholder="Деталь @(idx + 1)"
+                                                       @ref="nameInputs[idx]"
+                                                       @onkeydown="@(e => HandleNameKeyDown(e, idx))" />
+                                            </div>
+                                        </td>
+
+                                        <!-- Длина (только цифры) -->
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => DecrementLength(idx)" style="padding: 0.25rem 0.5rem;">−</button>
+                                                <input type="text" class="form-control form-control-sm numeric-only"
+                                                       @bind="detail.Length"
+                                                       @oninput="@(e => ValidateNumericInput(e, idx, "Length"))"
+                                                       @ref="lengthInputs[idx]"
+                                                       @onkeydown="@(e => HandleNumericKeyDown(e, idx, "Length"))" />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => IncrementLength(idx)" style="padding: 0.25rem 0.5rem;">+</button>
+                                            </div>
+                                        </td>
+
+                                        <!-- Ширина (только цифры) -->
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => DecrementWidth(idx)" style="padding: 0.25rem 0.5rem;">−</button>
+                                                <input type="text" class="form-control form-control-sm numeric-only"
+                                                       @bind="detail.Width"
+                                                       @oninput="@(e => ValidateNumericInput(e, idx, "Width"))"
+                                                       @ref="widthInputs[idx]"
+                                                       @onkeydown="@(e => HandleNumericKeyDown(e, idx, "Width"))" />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => IncrementWidth(idx)" style="padding: 0.25rem 0.5rem;">+</button>
+                                            </div>
+                                        </td>
+
+                                        <!-- Количество (только цифры) -->
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => DecrementQuantity(idx)" style="padding: 0.25rem 0.5rem;">−</button>
+                                                <input type="text" class="form-control form-control-sm numeric-only"
+                                                       @bind="detail.Quantity"
+                                                       @oninput="@(e => ValidateNumericInput(e, idx, "Quantity"))"
+                                                       @ref="quantityInputs[idx]"
+                                                       @onkeydown="@(e => HandleNumericKeyDown(e, idx, "Quantity"))" />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => IncrementQuantity(idx)" style="padding: 0.25rem 0.5rem;">+</button>
+                                            </div>
+                                        </td>
+
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" @bind="detail.CanRotate" />
+                                        </td>
+                                        <td class="text-center">
+                                            <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => RemoveDetailRow(idx)">×</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted py-4">
+                            Нет добавленных деталей. Нажмите "Добавить строку".
+                        </div>
+                    }
+                </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Отмена</button>
-                    <button type="button" class="btn btn-primary" @onclick="AddDetailFromModal">Добавить</button>
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDetailsModal">Отмена</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveDetailsFromModal">
+                        💾 Сохранить детали (@detailsModalBatch.Sum(d => d.Quantity) шт.)
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 }
 
-<script>
-    window.selectInputText = function (element) {
-    if (element) {
-    element.select();
+
+@if (isProfileModalOpen)
+{
+    <div class="modal d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #0055A4; color: white;">
+                    <h5 class="modal-title">@(isEditingExistingProfile ? "Редактирование профиля" : "Новый профиль")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseProfileManager"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- СПИСОК СУЩЕСТВУЮЩИХ ПРОФИЛЕЙ -->
+                    <div class="mb-4">
+                        <h6 class="text-primary mb-2">📋 Существующие профили:</h6>
+                        @if (availableConstraintProfiles.Any())
+                        {
+                            <div class="list-group">
+                                @foreach (var profile in availableConstraintProfiles)
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@profile.Name</strong>
+                                            @if (profile.IsDefault)
+                                            {
+                                                <span class="badge bg-success ms-2">По умолчанию</span>
+                                            }
+                                            <div class="small text-muted">
+                                                Пила: @profile.BladeWidth мм |
+                                                Отступы: В:@profile.MarginTop Н:@profile.MarginBottom Л:@profile.MarginLeft П:@profile.MarginRight
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => OpenProfileManager(profile)">
+                                                ✏️ Редактировать
+                                            </button>
+                                            @if (!profile.IsDefault)
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteProfileInCut(profile.Id)">
+                                                    🗑
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-info">Нет созданных профилей. Создайте первый ниже.</div>
+                        }
+                    </div>
+
+                    <hr class="my-4" />
+
+                    <!-- ФОРМА СОЗДАНИЯ/РЕДАКТИРОВАНИЯ -->
+                    <h6 class="text-primary mb-3">@(isEditingExistingProfile ? "✏️ Редактирование профиля" : "➕ Новый профиль")</h6>
+
+
+                    <EditForm Model="editingProfileInCut" OnValidSubmit="SaveProfileInCut">
+                        <DataAnnotationsValidator />
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold">Название *</label>
+                                <InputText class="form-control" @bind-Value="editingProfileInCut.Name" placeholder="Например: Станок 1 (пила 4мм)" />
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <div class="form-check">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editingProfileInCut.IsDefault" />
+                                    <label class="form-check-label fw-bold">По умолчанию</label>
+                                </div>
+                            </div>
+                            <div class="col-12"><hr class="text-muted" /></div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Ширина реза (мм)</label>
+                                <InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.BladeWidth" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Мин. расстояние (мм)</label>
+                                <InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.MinDistanceBetweenParts" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Макс. длина реза (мм)</label>
+                                <InputNumber class="form-control" step="1" @bind-Value="editingProfileInCut.MaxCutLength" />
+                            </div>
+
+                            <div class="col-12"><h6 class="text-primary mb-2">Отступы от края листа (мм)</h6></div>
+                            <div class="col-md-3"><label class="form-label">Верх</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.MarginTop" /></div>
+                            <div class="col-md-3"><label class="form-label">Низ</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.MarginBottom" /></div>
+                            <div class="col-md-3"><label class="form-label">Лево</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.MarginLeft" /></div>
+                            <div class="col-md-3"><label class="form-label">Право</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfileInCut.MarginRight" /></div>
+
+                            <div class="col-12"><hr class="text-muted" /></div>
+                            <div class="col-md-6 d-flex align-items-center">
+                                <div class="form-check form-switch">
+                                    <InputCheckbox class="form-check-input" style="width: 3em; height: 1.5em;" @bind-Value="editingProfileInCut.CanRotateParts" />
+                                    <label class="form-check-label fw-bold ms-2">Разрешить поворот деталей</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer mt-4 px-0 pb-0">
+                            @if (isEditingExistingProfile && !editingProfileInCut.IsDefault)
+                            {
+                                <button type="button" class="btn btn-outline-danger me-auto" @onclick="() => DeleteProfileInCut(editingProfileInCut.Id)">
+                                    🗑 Удалить этот профиль
+                                </button>
+                            }
+                            <button type="button" class="btn btn-secondary" @onclick="CloseProfileManager">Отмена</button>
+                            <button type="submit" class="btn text-white" style="background-color: #0055A4;">💾 Сохранить</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+
+    .cutting-table th {
+        border: 1px solid #0055A4;
     }
+
+    .cutting-table td {
+        border-right: 1px solid #0055A4;
+    }
+
+        .cutting-table td:last-child, .cutting-table th:last-child {
+            border-right: none;
+        }
+</style>
+
+<script>
+    window.openPrintWindow = function(htmlContent) {
+            var printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+            }
     };
+
+
+
+    window.toggleGroupRow = function(groupIdx) {
+        var subRows = document.querySelectorAll('tr.sub-row[data-group="' + groupIdx + '"]');
+        var isHidden = subRows.length === 0 || subRows[0].style.display === 'none';
+
+        // Скрываем все подстроки
+        document.querySelectorAll('tr.sub-row').forEach(function(tr) {
+            tr.style.display = 'none';
+        });
+        document.querySelectorAll('tr.group-row').forEach(function(tr) {
+            tr.style.backgroundColor = '';
+            tr.style.fontWeight = '';
+            tr.querySelector('td:last-child').textContent = '▼';
+        });
+
+        if (isHidden && subRows.length > 0) {
+            // Показываем подстроки этой группы
+            subRows.forEach(function(tr) {
+                tr.style.display = '';
+            });
+
+            var groupRow = document.querySelector('tr.group-row[data-group="' + groupIdx + '"]');
+            if (groupRow) {
+                groupRow.style.backgroundColor = '#E3F2FD';
+                groupRow.style.fontWeight = 'bold';
+                groupRow.querySelector('td:last-child').textContent = '▲';
+            }
+        }
+    };
+
+    window.highlightDetail = function(detailIdx) {
+        // Сброс всех выделений
+        document.querySelectorAll('svg rect[data-idx]').forEach(function(r) {
+            r.classList.remove('sel');
+            r.style.fill = 'white';
+            r.style.stroke = '#2E7D32';
+            r.style.strokeWidth = '2';
+        });
+        document.querySelectorAll('tr.sub-row').forEach(function(tr) {
+            tr.style.backgroundColor = '';
+            tr.style.fontWeight = '';
+        });
+
+        // Выделяем конкретную деталь
+        var rect = document.querySelector('svg rect[data-idx="' + detailIdx + '"]');
+        if (rect) {
+            rect.classList.add('sel');
+            rect.style.fill = '#BBDEFB';
+            rect.style.stroke = '#1565C0';
+            rect.style.strokeWidth = '3';
+
+            // Подсвечиваем строку
+            var detailRow = document.querySelector('tr.sub-row[data-idx="' + detailIdx + '"]');
+            if (detailRow) {
+                detailRow.style.backgroundColor = '#BBDEFB';
+                detailRow.style.fontWeight = 'bold';
+                detailRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+    };
+
+    window.highlightByIndex = function(idx) {
+        // Вызываем highlightDetail для совместимости
+        window.highlightDetail(idx);
+    };
+
+        /*window.focusElement = function(elementRef) {
+        if (elementRef) {
+            elementRef.focus();
+            elementRef.select();
+        }
+    };*/
+
+
+    ///// Обработка инпутов деталей в модальном окне
+    window.focusElementSafe = function (element) {
+        if (element && element.focus) {
+            element.focus();
+            element.select(); // Выделяет текст для удобного перезаписывания
+        }
+    };
+
+    // Умная навигация стрелками внутри строки
+    // Возвращает true если переход выполнен, false если курсор просто сдвинулся
+    window.handleArrowInRow = function (elements, currentIndex, direction) {
+        var current = elements[currentIndex];
+        if (!current) return false;
+
+        var selStart = current.selectionStart;
+        var selEnd = current.selectionEnd;
+        var value = current.value || '';
+        var needToMove = false;
+        var targetIdx = -1;
+
+        // Если есть выделение — переходим на соседнее поле
+        if (selStart !== selEnd) {
+            needToMove = true;
+            targetIdx = direction === 'right' ? currentIndex + 1 : currentIndex - 1;
+        }
+        // Если курсор в конце и стрелка вправо — переходим
+        else if (direction === 'right' && selStart === value.length) {
+            needToMove = true;
+            targetIdx = currentIndex + 1;
+        }
+        // Если курсор в начале и стрелка влево — переходим
+        else if (direction === 'left' && selStart === 0) {
+            needToMove = true;
+            targetIdx = currentIndex - 1;
+        }
+
+        if (needToMove && targetIdx >= 0 && targetIdx < elements.length && elements[targetIdx]) {
+            elements[targetIdx].focus();
+            elements[targetIdx].select();
+            return true;
+        } else {
+            // Просто двигаем курсор вручную (т.к. preventDefault сработал)
+            if (direction === 'right' && selStart < value.length) {
+                current.selectionStart = selStart + 1;
+                current.selectionEnd = selStart + 1;
+            } else if (direction === 'left' && selStart > 0) {
+                current.selectionStart = selStart - 1;
+                current.selectionEnd = selStart - 1;
+            }
+            return false;
+        }
+    };
+
+    // Блокировка нецифровых символов
+    window.blockNonNumeric = function (e) {
+        var key = e.key;
+        if (key.length === 1 && !/[0-9]/.test(key) &&
+            !['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowUp', 'ArrowDown',
+              'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Control', 'Shift', 'Alt'].includes(key)) {
+            e.preventDefault();
+        }
+    };
+
+    // Глобальный обработчик — блокирует буквы в полях с классом numeric-only
+    document.addEventListener('keydown', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('numeric-only')) {
+            window.blockNonNumeric(e);
+        }
+    });
+
 </script>
 
-
 @code {
-    //private Sheet CurrentSheet { get; set; } = new Sheet();
     [Parameter] public string HashId { get; set; } = default!;
-    [CascadingParameter]
+
+
+    private Guid? userStoreId;
+    private int CurrentMode { get; set; } = 1;
+    private string storeCode = string.Empty;
+    private bool isLocked { get; set; } = false;
+    private string SavedGuid { get; set; } = string.Empty;
+    private string Invoice { get; set; } = "";
+    private string numCut { get; set; } = "";
+    private bool hasValidationErrors = false;
+    private string? successMessage = null;
+    private DateTime? CreateDate { get; set; }
+
+    private bool showAdditionalFields = false;
+    private int currentShiftNumber = 0; // Номер текущего бланка в смене
+
     private List<CuttingSource> SCut { get; set; } = new List<CuttingSource>();
-    private Detail NewDetail { get; set; } = new Detail();
-    private List<Detail> Details { get; set; } = new();
-    private CuttingPlan? ResultPlan { get; set; }
-    private List<CuttingPlan>? ResultListPlan { get; set; } = new List<CuttingPlan>();
+    private List<Sheet> availableSheets { get; set; } = new();
+    private List<AvailableServiceDto> availableStoreServices { get; set; } = new();
+    private string userId = string.Empty;
 
-
-    private List<Sheet> availableSheets = new();
-    private List<Sheet> SelectedSheets = new();
-    //private CalculationModel model = new();
-
-    private StoreStatus Status = new();
-
-    private bool showAddDetailModal = false;
-    private CuttingSource? targetSheetForNewDetail;
-    private Detail NewDetailModal = new();
+    private CuttingSource? activeSourceWithPlan => SCut.FirstOrDefault(s => s.IsActive && s.CalculatedPlan != null);
 
     private ElementReference searchInput;
     private string searchCode = "";
     private bool showErrorSKU = false;
 
-    private string Invoice = "";
+    private bool showDetailsModal = false;
+    private CuttingSource? detailsModalSource;
+    private List<Detail> detailsModalBatch = new();
+    private List<MaterialTypeDto> materialTypes = new();
 
-    private int? selectedSheetId;
+    private int NewOwnMaterialServiceId { get; set; } = 0;
+    private int NewOwnMaterialCuts { get; set; } = 0;
+    private int NewOwnMaterialTaromest { get; set; } = 0;
+    // Для интерактивности деталей
+    private string? selectedDetailKey;
+    private int selectedDetailCount;
 
-    private string userId = string.Empty;
+    private Dictionary<int, ElementReference> nameInputs = new();
+    private Dictionary<int, ElementReference> lengthInputs = new();
+    private Dictionary<int, ElementReference> widthInputs = new();
+    private Dictionary<int, ElementReference> quantityInputs = new();
+
+    private List<CuttingConstraintProfile> availableConstraintProfiles = new();
+
+    private bool isProfileModalOpen = false;
+    private CuttingConstraintProfile editingProfileInCut = new();
+    private bool isEditingExistingProfile = false;
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -283,89 +1028,285 @@
         var user = authState.User;
 
         if (user.Identity?.IsAuthenticated == true)
-            {
+        {
             userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            availableSheets = await SheetService.GetActiveSheetsAsync(userId);
 
-            Status = await StoreContext.GetStatusAsync(userId);
+            userStoreId = await PricingService.GetUserStoreIdAsync(userId);
+            if (userStoreId.HasValue && userStoreId.Value != Guid.Empty)
+            {
+                var prices = await PricingService.GetStorePricesAsync(userStoreId.Value);
+                availableStoreServices = prices.Select(p => new AvailableServiceDto
+                    {
+                        ServiceId = p.ServiceId,
+                        ServiceName = p.ServiceName,
+                        ServiceCode = p.ServiceCode,
+                        Price = p.Price
+                    }).ToList();
+
+                 availableConstraintProfiles = await ConstraintService.GetProfilesAsync(userStoreId.Value);
+            }
+
+            materialTypes = await PricingService.GetAllMaterialTypesAsync();
+
+            // Получаем код магазина текущего пользователя
+            var userStoreCode = await CuttingService.GetUserStoreCodeAsync(userId);
+            storeCode = userStoreCode ?? string.Empty;
+            currentShiftNumber = await CuttingService.GetShiftNumberAsync(userId, HashId);
+
+            // ЗАГРУЗКА СУЩЕСТВУЮЩЕГО РАСКРОЯ ПО HASHID
+            if (!string.IsNullOrEmpty(HashId))
+            {
+                var plans = await CuttingService.GetCuttingPlan(HashId);
+                CreateDate = await CuttingService.GetCuttingPlanDate(HashId);
+
+                if (CreateDate.HasValue && CreateDate.Value.Date < DateTime.Today)
+                {
+                    isLocked = true;
+                }
+
+                SavedGuid = HashId;
+
+                if (plans != null && plans.Any())
+                {
+                    var firstPlan = plans.First();
+                    Invoice = firstPlan.Invoice ?? "";
+                    numCut = firstPlan.NumCut ?? "";
+                    SCut.Clear();
+
+                    var groupedLayouts = firstPlan.SheetLayouts.GroupBy(l => l.Sheet?.SKU).ToList();
+
+                    foreach (var group in groupedLayouts)
+                    {
+                        var firstLayout = group.First();
+                        int totalSheetsInGroup = group.Sum(l => l.Sheet?.Quantity ?? 1);
+
+                        var source = new CuttingSource
+                            {
+                                IsOwnMaterial = firstLayout.Sheet?.SKU == "OWN",
+                                Sheet = firstLayout.Sheet,
+                                ManualTaromest = group.Sum(l => l.DetailsCount),
+
+                                // === ИСПРАВЛЕНИЕ: Устанавливаем профиль ограничений ===
+                                // Берем дефолтный профиль магазина (или можно попытаться сохранить/загрузить конкретный)
+                                Constraints = availableConstraintProfiles?.FirstOrDefault(p => p.IsDefault)
+                                    ?? availableConstraintProfiles?.FirstOrDefault(),
+
+                                CalculatedPlan = (firstLayout.Details != null && firstLayout.Details.Any()) ? new CuttingPlan
+                                {
+                                    SheetLayouts = group.ToList(),
+                                    UnplacedDetails = firstPlan.UnplacedDetails,
+                                    TotalCuts = firstPlan.TotalCuts,
+                                    TotalMaterialUsage = firstPlan.TotalMaterialUsage,
+                                    TotalWastePercentage = firstPlan.TotalWastePercentage,
+                                    OptimizationAlgorithm = firstPlan.OptimizationAlgorithm
+                                } : null
+                            };
+
+                        if (source.Sheet != null)
+                        {
+                            source.Sheet.Quantity = totalSheetsInGroup;
+
+                            // === ИСПРАВЛЕНИЕ: Восстанавливаем параметры листа из сохраненных данных ===
+                            // Если в сохраненном листе есть конкретные отступы, применяем их к Constraints
+                            if (source.Constraints != null)
+                            {
+                                // Если в Sheet сохранились Margin'ы (из предыдущего расчета), используем их
+                                source.Constraints.MarginTop = firstLayout.Sheet?.MarginTop ?? 0;
+                                source.Constraints.MarginBottom = firstLayout.Sheet?.MarginBottom ?? 0;
+                                source.Constraints.MarginLeft = firstLayout.Sheet?.MarginLeft ?? 0;
+                                source.Constraints.MarginRight = firstLayout.Sheet?.MarginRight ?? 0;
+                                source.Constraints.BladeWidth = firstLayout.Sheet?.BladeWidth ?? 3.2;
+                                source.Constraints.MinDistanceBetweenParts = firstLayout.Sheet?.MinDistanceBetweenParts ?? 0;
+                                source.Constraints.CanRotateParts = firstLayout.Sheet?.CanRotateParts ?? true;
+                                source.Constraints.MaxCutLength = firstLayout.Sheet?.MaxCutLength ?? 3000;
+                            }
+                        }
+
+                        if (firstLayout.Services != null && firstLayout.Services.Any())
+                        {
+                            source.Services = group.SelectMany(l => l.Services ?? new List<SheetServiceItem>())
+                                .GroupBy(s => s.ServiceId)
+                                .Select(g => new SourceServiceItem
+                                    {
+                                        ServiceId = g.Key,
+                                        ServiceName = g.First().ServiceName,
+                                        ServiceCode = g.First().ServiceCode,
+                                        Price = g.First().Price,
+                                        Quantity = g.Sum(s => s.Quantity),
+                                        IsDefaultCuttingService = g.First().IsDefaultCuttingService
+                                    }).ToList();
+                        }
+                        else
+                        {
+                            source.Services.Add(new SourceServiceItem
+                                {
+                                    ServiceName = firstLayout.CuttingServiceName ?? "Резка",
+                                    Price = (float)(firstLayout.Sheet?.CutPrice ?? 0),
+                                    Quantity = group.Sum(l => l.CutCount),
+                                    IsDefaultCuttingService = true
+                                });
+                        }
+
+                        if (group.Any(l => l.Details != null && l.Details.Any()))
+                        {
+                            source.Details = group.SelectMany(l => l.Details ?? new List<CutDetail>())
+                                .Select(d => new Detail
+                                    {
+                                        Name = d.Name ?? "Деталь",
+                                        Length = d.Length,
+                                        Width = d.Width,
+                                        Quantity = 1,
+                                        CanRotate = d.Rotated
+                                    }).ToList();
+                        }
+
+                        SCut.Add(source);
+                    }
+
+                    if (SCut.Any()) SCut.First().IsActive = true;
+
+                    // === ВАЖНО: Обновляем UI после загрузки ===
+                    StateHasChanged();
+                }
+            }
         }
 
-        availableSheets = await SheetService.GetActiveSheetsAsync(userId);
-        //if(!String.IsNullOrEmpty(HashId))
-         
-        //State.OnChange += StateHasChanged;
-        State.OnChangeAsync += HandleStateChangeAsync;
         State.OnChange += StateHasChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
-{
-    if (firstRender)
     {
-        // Устанавливаем фокус на поле ввода при первой отрисовке страницы
-        await searchInput.FocusAsync();
-        
-        // Если вы хотите, чтобы текст внутри поля сразу выделялся 
-        // (как это происходит после нажатия Enter), используйте ваш JS-метод:
-        await SelectAllText();
-    }
-}
-
-    /*private async Task<bool> IsInRoleAsync(string userId, string role)
+        if (firstRender)
         {
-        var userService = ScopedServices.GetRequiredService<IUserService>();
-        return await userService.IsInRoleAsync(userId, role);
-    }*/
-
-    private async Task HandleStateChangeAsync()
-    {
-        await InvokeAsync(StateHasChanged);
+            await searchInput.FocusAsync();
+        }
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(searchCode))
         {
-            // Выполняем нужное действие
             var sheetSearch = await SheetService.GetSheetByCode(searchCode.Trim());
             if (sheetSearch == null)
+            {
                 showErrorSKU = true;
+            }
             else
             {
                 showErrorSKU = false;
-                var sheet = SCut.FirstOrDefault(x => x.Sheet.Id == sheetSearch.Id);
-                if (sheet != null)
-                    sheet.QuantitySheet++;
-                else
-                {
-                    SelectedSheets.Add(sheetSearch);
-                    SCut.ForEach(x => x.IsActive = false);
-                    SCut.Add(new CuttingSource { Sheet = sheetSearch, Details = new List<Detail>(), IsActive = true });
-                }
+                AddSourceToSCut(sheetSearch);
+                searchCode = "";
             }
-            await SelectAllText();
-            StateHasChanged(); // Обновляем UI
-
         }
     }
 
-
-    private async Task SelectAllText()
+    // Обработка нажатий в поле Name
+    private async Task HandleNameKeyDown(KeyboardEventArgs e, int rowIndex)
     {
-        await JSRuntime.InvokeVoidAsync("selectInputText", searchInput);
+        await HandleArrowNavigation(e, rowIndex, "name");
     }
-    private async Task OnSelectedSheetsChanged()
+
+    // Обработка нажатий в числовых полях
+    private async Task HandleNumericKeyDown(KeyboardEventArgs e, int rowIndex, string fieldType)
     {
-        /*var selectedIds = ((string[])e.Value).Select(int.Parse).ToList();
-        model.SelectedSheetIds = selectedIds;
-        SelectedSheets = await SheetService.GetSheetsByIdsAsync(selectedIds);*/
-        if (selectedSheetId.HasValue)
+        await HandleArrowNavigation(e, rowIndex, fieldType);
+    }
+
+    // Универсальная обработка стрелок
+    private async Task HandleArrowNavigation(KeyboardEventArgs e, int rowIndex, string fieldType)
+    {
+        if (e.Key != "ArrowUp" && e.Key != "ArrowDown" && e.Key != "ArrowLeft" && e.Key != "ArrowRight")
         {
-            var sheetToAdd = availableSheets.FirstOrDefault(s => s.Id == selectedSheetId.Value);
-            if (sheetToAdd != null && !SelectedSheets.Any(s => s.Id == sheetToAdd.Id))
+            return;
+        }
+
+        // Для Left/Right — делегируем умную логику в JS
+        if (e.Key == "ArrowLeft" || e.Key == "ArrowRight")
+        {
+            var direction = e.Key == "ArrowRight" ? "right" : "left";
+            var elements = new[]
             {
-                SelectedSheets.Add(sheetToAdd);
-                selectedSheetId = null; // Сбрасываем выбор
+            nameInputs.GetValueOrDefault(rowIndex),
+            lengthInputs.GetValueOrDefault(rowIndex),
+            widthInputs.GetValueOrDefault(rowIndex),
+            quantityInputs.GetValueOrDefault(rowIndex)
+        };
+            var currentIndex = fieldType switch
+            {
+                "name" => 0,
+                "Length" => 1,
+                "Width" => 2,
+                "Quantity" => 3,
+                _ => 0
+            };
+
+            // JS сам решит: перейти или сдвинуть курсор
+            await JSRuntime.InvokeVoidAsync("handleArrowInRow", elements, currentIndex, direction);
+            return;
+        }
+
+        // Для Up/Down — старая логика
+        int targetRow = rowIndex;
+        string targetField = fieldType;
+
+        if (e.Key == "ArrowDown")
+        {
+            if (rowIndex == detailsModalBatch.Count - 1)
+            {
+                var detail = detailsModalBatch[rowIndex];
+                if (detail.Length > 0 || detail.Width > 0)
+                {
+                    await AddDetailRow();
+                    StateHasChanged();
+                    await Task.Delay(50);
+                    targetRow = rowIndex + 1;
+                    targetField = "Length";
+                }
             }
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            var currentDetail = detailsModalBatch[rowIndex];
+            if (rowIndex > 0 && currentDetail.Length == 0 && currentDetail.Width == 0)
+            {
+                detailsModalBatch.RemoveAt(rowIndex);
+                StateHasChanged();
+                await Task.Delay(50);
+                targetRow = rowIndex - 1;
+            }
+            else if (rowIndex > 0)
+            {
+                targetRow = rowIndex - 1;
+            }
+        }
+
+        ElementReference targetRef = targetField switch
+        {
+            "name" => nameInputs.GetValueOrDefault(targetRow),
+            "Length" => lengthInputs.GetValueOrDefault(targetRow),
+            "Width" => widthInputs.GetValueOrDefault(targetRow),
+            "Quantity" => quantityInputs.GetValueOrDefault(targetRow),
+            _ => default
+        };
+
+        if (targetRef.Id != null)
+        {
+            await Task.Delay(10);
+            await JSRuntime.InvokeVoidAsync("focusElementSafe", targetRef);
+        }
+    }
+
+    private async Task OnModeChanged(int newMode)
+    {
+        CurrentMode = newMode;
+        showErrorSKU = false;
+        hasValidationErrors = false;
+
+        if (newMode == 1)
+        {
+            await Task.Delay(150);
+            await searchInput.FocusAsync();
         }
     }
 
@@ -374,174 +1315,1138 @@
         if (int.TryParse(e.Value?.ToString(), out var selectedId) && selectedId > 0)
         {
             var sheetToAdd = availableSheets.FirstOrDefault(s => s.Id == selectedId);
-            if (sheetToAdd != null)
-            {
-                var sheet = SCut.FirstOrDefault(x => x.Sheet.Id == sheetToAdd.Id);
-                if (sheet != null)
-                    sheet.QuantitySheet++;
-                else
-                {
-                    SelectedSheets.Add(sheetToAdd);
-                    SCut.ForEach(x => x.IsActive = false);
-                    SCut.Add(new CuttingSource { Sheet = sheetToAdd, Details = new List<Detail>(), IsActive = true });
-                }
-                StateHasChanged(); // Обновляем UI
-
-            }
+            if (sheetToAdd != null) AddSourceToSCut(sheetToAdd);
         }
     }
 
-    private void RemoveSheet(CuttingSource scut)
-    { 
-        SCut.Remove(scut);
-        if(SCut.Count() > 0)
-            SCut[^1].IsActive = true;
-    }
-
-    private void ActiveSheet(CuttingSource scut)
+    private async Task AddSourceToSCut(Sheet sheet)
     {
+        // 1. Снимаем активность со всех остальных позиций
         SCut.ForEach(x => x.IsActive = false);
-        scut.IsActive = true;
-    }
 
-    private void MinusSheet(CuttingSource scut)
-    {
-        if (scut.QuantitySheet > 1)
-            scut.QuantitySheet--;
-        return;
-    }
+        // 2. НОВАЯ ЛОГИКА: Проверяем, есть ли уже такой лист в списке (сравниваем по Артикулу/SKU)
+        // Исключаем IsOwnMaterial, чтобы свой материал не сливался с магазинным, если артикулы совпадут
+        var existingSource = SCut.FirstOrDefault(s => s.Sheet?.SKU == sheet.SKU && !s.IsOwnMaterial);
 
-    private void PlusSheet(CuttingSource scut) => scut.QuantitySheet++;
-
-
-    private async Task Calculate()
-    {
-        if (!SelectedSheets.Any())
+        if (existingSource != null)
         {
-            // Показать ошибку
+            // Если такой лист уже есть, просто увеличиваем количество и делаем его активным
+            existingSource.Sheet.Quantity += 1;
+            existingSource.IsActive = true;
+
+            // Если при добавлении из выпадающего списка передается конкретное Quantity > 1,
+            // можно использовать: existingSource.Sheet.Quantity += sheet.Quantity;
+
+            StateHasChanged();
+            return; // Выходим, новый объект создавать не нужно
+        }
+
+        SourceServiceItem? defaultService = null;
+
+        // 2. Пытаемся найти услугу, привязанную к типу материала в админке
+        if (sheet.MaterialTypeId.HasValue)
+        {
+            var materialType = materialTypes.FirstOrDefault(m => m.Id == sheet.MaterialTypeId);
+
+            if (materialType?.DefaultCuttingServiceId.HasValue == true)
+            {
+                var serviceFromDb = availableStoreServices
+                    .FirstOrDefault(s => s.ServiceId == materialType.DefaultCuttingServiceId.Value);
+
+                if (serviceFromDb != null)
+                {
+                    defaultService = new SourceServiceItem
+                        {
+                            ServiceId = serviceFromDb.ServiceId,
+                            ServiceName = serviceFromDb.ServiceName,
+                            ServiceCode = serviceFromDb.ServiceCode,
+                            Price = serviceFromDb.Price,
+                            IsDefaultCuttingService = true,
+                            Quantity = 0
+                        };
+                }
+            }
+        }
+
+        // 3. Фолбэк: если в админке услуга не привязана, берем ПЕРВУЮ доступную услугу магазина (обычно это основная резка)
+        if (defaultService == null)
+        {
+            var firstService = availableStoreServices.FirstOrDefault();
+            if (firstService != null)
+            {
+                defaultService = new SourceServiceItem
+                    {
+                        ServiceId = firstService.ServiceId,
+                        ServiceName = firstService.ServiceName,
+                        ServiceCode = firstService.ServiceCode,
+                        Price = firstService.Price,
+                        IsDefaultCuttingService = true,
+                        Quantity = 0
+                    };
+            }
+        }
+
+        var defaultConstraints = availableConstraintProfiles.FirstOrDefault(p => p.IsDefault);
+        if (defaultConstraints == null)
+        {
+            // Если профиля нет, создаем базовый
+            defaultConstraints = new CuttingConstraintProfile
+                {
+                    Name = "Стандартный",
+                    IsDefault = true,
+                    BladeWidth = 3.2,
+                    CanRotateParts = true
+                };
+        }
+
+
+        // 4. Создаем новую позицию раскроя
+        var newSource = new CuttingSource
+            {
+                Sheet = sheet.Clone(),
+                Details = new List<Detail>(),
+                IsActive = true,
+                IsOwnMaterial = false,
+                Constraints = defaultConstraints
+            };
+
+        newSource.Sheet.Quantity = 1;
+
+        // 5. Добавляем услугу (если вдруг список услуг магазина пуст, добавляем заглушку)
+        if (defaultService != null)
+        {
+            newSource.Services.Add(defaultService);
+        }
+        else
+        {
+            newSource.Services.Add(new SourceServiceItem
+                {
+                    ServiceName = "Резка",
+                    Price = (float)sheet.CutPrice,
+                    IsDefaultCuttingService = true,
+                    Quantity = 0
+                });
+        }
+
+        // 6. Добавляем в список и обновляем интерфейс
+        SCut.Add(newSource);
+        StateHasChanged();
+    }
+
+    private async Task AddOwnMaterialSource()
+    {
+        var service = availableStoreServices.FirstOrDefault(s => s.ServiceId == NewOwnMaterialServiceId);
+        if (service == null) return;
+
+        if (NewOwnMaterialCuts == 0 || NewOwnMaterialTaromest == 0)
+        {
+            hasValidationErrors = true;
+            StateHasChanged();
             return;
         }
 
-        var resultPlan = new CuttingPlan();
-        //State.SetPlan(resultPlan, SelectedSheets);
-
-        NavigationManager.NavigateTo("/cutting-plan");
-    }
-
-    private void AddDetail()
-    {
-        /*Details.Add(new Detail
-        {
-        Length = NewDetail.Length,
-        Width = NewDetail.Width,
-        //Name = NewDetail.Name,
-        Name = (Details.Count() + 1).ToString(),
-        Quantity = NewDetail.Quantity,
-        CanRotate = NewDetail.CanRotate
-    });*/
-
-        SCut.Where(x => x.IsActive).FirstOrDefault().Details.Add(new Detail
+        SCut.ForEach(x => x.IsActive = false);
+        var newSource = new CuttingSource
             {
-            Length = NewDetail.Length,
-            Width = NewDetail.Width,
-            //Name = NewDetail.Name,
-            Name = (Details.Count() + 1).ToString(),
-            Quantity = NewDetail.Quantity,
-            CanRotate = NewDetail.CanRotate
-        });
+                IsOwnMaterial = true,
+                OwnMaterialName = "Свой материал",
+                IsActive = true,
+                ManualTaromest = NewOwnMaterialTaromest,
+                Sheet = new Sheet { Name = "Свой материал", SKU = "OWN", BarCode = "OWN", Quantity = 1 }
+            };
 
-        // Сброс формы
-        NewDetail = new Detail();
-    }
-
-    private void RemoveDetail(Detail detail)
-    {
-        SCut.Where(x => x.IsActive).FirstOrDefault().Details.Remove(detail);
-        //Details.Remove(detail);
-    }
-
-    private async Task CalculateCutting()
-    {
-        //ResultPlan = CuttingService.OptimizeCutting(CurrentSheet, Details);
-        if(SCut.Count > 0)
-        {
-            foreach (var plan in SCut)
+        newSource.Services.Add(new SourceServiceItem
             {
-                var CurPlan = CuttingService.OptimizeCutting(Enumerable.Repeat(00, plan.QuantitySheet).Select(_ => plan.Sheet.Clone()).ToList(), plan.Details);
-                ResultListPlan.Add(CurPlan);
+                ServiceId = service.ServiceId,
+                ServiceName = service.ServiceName,
+                ServiceCode = service.ServiceCode,
+                Price = service.Price,
+                Quantity = NewOwnMaterialCuts,
+                IsDefaultCuttingService = true
+            });
+
+        SCut.Add(newSource);
+        NewOwnMaterialServiceId = 0;
+        NewOwnMaterialCuts = 0;
+        NewOwnMaterialTaromest = 0;
+        hasValidationErrors = false;
+        StateHasChanged();
+    }
+
+    private void AddServiceToSource(CuttingSource source)
+    {
+        if (source.TempServiceIdToAdd == 0) return;
+        var svc = availableStoreServices.FirstOrDefault(s => s.ServiceId == source.TempServiceIdToAdd);
+        if (svc != null)
+        {
+            source.Services.Add(new SourceServiceItem
+                {
+                    ServiceId = svc.ServiceId,
+                    ServiceName = svc.ServiceName,
+                    ServiceCode = svc.ServiceCode,
+                    Price = svc.Price,
+                    Quantity = 1,
+                    IsDefaultCuttingService = false
+                });
+            source.TempServiceIdToAdd = 0;
+        }
+    }
+
+    private void RemoveServiceFromSource(CuttingSource source, SourceServiceItem svc)
+    {
+        source.Services.Remove(svc);
+    }
+
+    private void ActivateSource(CuttingSource source)
+    {
+        SCut.ForEach(x => x.IsActive = false);
+        source.IsActive = true;
+    }
+
+    private void RemoveSource(CuttingSource source)
+    {
+        SCut.Remove(source);
+        if (SCut.Any()) SCut.Last().IsActive = true;
+    }
+
+    private void DecrementSheetQuantity(CuttingSource source)
+    {
+        if (source.Sheet != null && source.Sheet.Quantity > 1) source.Sheet.Quantity--;
+    }
+
+    private void IncrementSheetQuantity(CuttingSource source)
+    {
+        if (source.Sheet != null) source.Sheet.Quantity++;
+    }
+
+    private void IncrementTaromest(CuttingSource source)
+    {
+        source.ManualTaromest++;
+    }
+
+    private void DecrementTaromest(CuttingSource source)
+    {
+        if (source.ManualTaromest > 0) source.ManualTaromest--;
+    }
+
+    private void IncrementServiceQuantity(CuttingSource source, SourceServiceItem svc)
+    {
+        svc.Quantity++;
+    }
+
+    private void DecrementServiceQuantity(CuttingSource source, SourceServiceItem svc)
+    {
+        if (svc.Quantity > 0) svc.Quantity--;
+    }
+
+    // Инкремент значения
+    private void IncrementValue(int rowIndex, string fieldType)
+    {
+        var detail = detailsModalBatch[rowIndex];
+        switch (fieldType)
+        {
+            case "Length":
+                detail.Length++;
+                break;
+            case "Width":
+                detail.Width++;
+                break;
+            case "Quantity":
+                detail.Quantity++;
+                break;
+        }
+        StateHasChanged();
+    }
+
+    // Декремент значения
+    private void DecrementValue(int rowIndex, string fieldType)
+    {
+        var detail = detailsModalBatch[rowIndex];
+        switch (fieldType)
+        {
+            case "Length":
+                if (detail.Length > 0) detail.Length--;
+                break;
+            case "Width":
+                if (detail.Width > 0) detail.Width--;
+                break;
+            case "Quantity":
+                if (detail.Quantity > 1) detail.Quantity--;
+                break;
+        }
+        StateHasChanged();
+    }
+
+    private void DecrementLength(int idx) => DecrementValue(idx, "Length");
+    private void IncrementLength(int idx) => IncrementValue(idx, "Length");
+    private void DecrementWidth(int idx) => DecrementValue(idx, "Width");
+    private void IncrementWidth(int idx) => IncrementValue(idx, "Width");
+    private void DecrementQuantity(int idx) => DecrementValue(idx, "Quantity");
+    private void IncrementQuantity(int idx) => IncrementValue(idx, "Quantity");
+
+    private void SelectDetailFromTable(SheetLayout sheetLayout, string name, int length, int width, int count)
+    {
+        selectedDetailKey = $"{name}_{length}_{width}";
+        selectedDetailCount = count;
+        StateHasChanged();
+    }
+
+    private void ClearDetailSelection()
+    {
+        selectedDetailKey = null;
+        selectedDetailCount = 0;
+        StateHasChanged();
+    }
+
+    private void ValidateNumericInput(ChangeEventArgs e, int rowIndex, string fieldType)
+    {
+        var value = e.Value?.ToString() ?? "";
+        var detail = detailsModalBatch[rowIndex];
+
+        // Оставляем только цифры
+        var numericValue = new string(value.Where(char.IsDigit).ToArray());
+
+        if (int.TryParse(numericValue, out var num))
+        {
+            switch (fieldType)
+            {
+                case "Length": detail.Length = Math.Max(0, num); break;
+                case "Width": detail.Width = Math.Max(0, num); break;
+                case "Quantity": detail.Quantity = Math.Max(1, num); break;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(numericValue))
+        {
+            // Если поле очищено, ставим минимальное значение
+            switch (fieldType)
+            {
+                case "Length": detail.Length = 0; break;
+                case "Width": detail.Width = 0; break;
+                case "Quantity": detail.Quantity = 1; break;
+            }
+        }
+    }
+    
+    private async void OpenDetailsModal(CuttingSource source)
+    {
+        detailsModalSource = source;
+        detailsModalBatch = source.Details.Select(d => new Detail
+            {
+                Name = d.Name,
+                Length = d.Length,
+                Width = d.Width,
+                Quantity = d.Quantity,
+                CanRotate = d.CanRotate
+            }).ToList();
+
+        if (!detailsModalBatch.Any())
+        {
+            detailsModalBatch.Add(new Detail { Name = "Деталь 1", Length = 0, Width = 0, Quantity = 1, CanRotate = true });
+        }
+
+        // Очищаем словари перед новым рендером, чтобы не было "мусора"
+        nameInputs.Clear();
+        lengthInputs.Clear();
+        widthInputs.Clear();
+        quantityInputs.Clear();
+
+        showDetailsModal = true;
+        StateHasChanged();
+
+        await Task.Delay(100);
+        await JSRuntime.InvokeVoidAsync("focus", nameInputs.GetValueOrDefault(0));
+    }
+
+    private void CloseDetailsModal()
+    {
+        showDetailsModal = false;
+        detailsModalSource = null;
+        detailsModalBatch = new();
+    }
+
+    private async Task AddDetailRow()
+    {
+        detailsModalBatch.Add(new Detail
+            {
+                Name = $"Деталь {detailsModalBatch.Count}", // Исправлено: Count уже увеличится после Add
+                Length = 0,
+                Width = 0,
+                Quantity = 1,
+                CanRotate = true
+            });
+
+        // Принудительно перерисовываем компонент
+        StateHasChanged();
+
+        // Ждем пока Blazor отрендерит новый input
+        await Task.Delay(100);
+
+        // Проверяем, что элемент существует и валиден
+        var newIndex = detailsModalBatch.Count - 1;
+        if (nameInputs.ContainsKey(newIndex) && nameInputs[newIndex].Id != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("focus", nameInputs[newIndex]);
+            }
+            catch (TaskCanceledException)
+            {
+                // Игнорируем отмену задачи (модалка закрылась)
+            }
+            catch (JSDisconnectedException)
+            {
+                // Игнорируем разрыв соединения
+            }
+            catch (Exception)
+            {
+                // Игнорируем остальные ошибки JS
+            }
+        }
+    }
+
+    private void RemoveDetailRow(int index)
+    {
+        if (index >= 0 && index < detailsModalBatch.Count)
+        {
+            detailsModalBatch.RemoveAt(index);
+        }
+    }
+
+    private void SaveDetailsFromModal()
+    {
+        if (detailsModalSource == null) return;
+
+        var validDetails = detailsModalBatch.Where(d => d.Length > 0 && d.Width > 0 && d.Quantity > 0).ToList();
+        detailsModalSource.Details = validDetails;
+
+        if (detailsModalSource.CalculatedPlan != null)
+        {
+            detailsModalSource.CalculatedPlan = null;
+            detailsModalSource.IsCutCountManuallyEdited = false;
+            var cuttingSvc = detailsModalSource.Services.FirstOrDefault(s => s.IsDefaultCuttingService);
+            if (cuttingSvc != null) cuttingSvc.Quantity = 0;
+        }
+
+        CloseDetailsModal();
+        StateHasChanged();
+    }
+
+    private async Task CalculateForSource(CuttingSource source)
+    {
+        if (!source.Details.Any() || source.Sheet == null) return;
+
+        var constraints = source.Constraints ?? new CuttingConstraintProfile
+            {
+                BladeWidth = 3.2,
+                MinDistanceBetweenParts = 0,
+                CanRotateParts = true,
+                MaxCutLength = 3000,
+                MarginTop = 0,
+                MarginBottom = 0,
+                MarginLeft = 0,
+                MarginRight = 0
+            };
+
+        var sheetsForCalc = new List<Sheet>();
+        for (int i = 0; i < source.Sheet.Quantity; i++)
+        {
+            var sheetForCalc = source.Sheet.Clone();
+
+            // Прямой маппинг новых точных отступов
+            sheetForCalc.MarginTop = constraints.MarginTop;
+            sheetForCalc.MarginBottom = constraints.MarginBottom;
+            sheetForCalc.MarginLeft = constraints.MarginLeft;
+            sheetForCalc.MarginRight = constraints.MarginRight;
+
+            // ЗАЩИТА: MinMargin становится максимальным из 4-х отступов.
+            // Это гарантирует, что любой старый код, проверяющий MinMargin,
+            // не позволит детали приблизиться к краю ближе, чем позволяет самый строгий новый отступ.
+            sheetForCalc.MinMargin = Math.Max(
+                Math.Max(constraints.MarginTop, constraints.MarginBottom),
+                Math.Max(constraints.MarginLeft, constraints.MarginRight)
+            );
+
+            sheetForCalc.BladeWidth = constraints.BladeWidth;
+            sheetForCalc.MinDistanceBetweenParts = constraints.MinDistanceBetweenParts;
+            sheetForCalc.CanRotateParts = constraints.CanRotateParts;
+            sheetForCalc.MaxCutLength = constraints.MaxCutLength;
+
+            sheetsForCalc.Add(sheetForCalc);
+        }
+
+        var plan = CuttingService.OptimizeCutting(sheetsForCalc, source.Details);
+
+        source.CalculatedPlan = plan;
+        source.IsCutCountManuallyEdited = false;
+
+        var cuttingSvc = source.Services.FirstOrDefault(s => s.IsDefaultCuttingService);
+        if (cuttingSvc != null)
+        {
+            cuttingSvc.Quantity = plan.TotalCuts;
+        }
+
+        StateHasChanged();
+    }
+
+
+
+    // ===== СОХРАНЕНИЕ (всегда обновляет или создаёт) =====
+    private async Task SaveAllPlans()
+    {
+        if (isLocked)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Раскрой от предыдущего дня заблокирован. Редактирование невозможно.");
+            return;
+        }
+
+        if (!SCut.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Добавьте хотя бы одну позицию!");
+            return;
+        }
+
+        var errors = new List<string>();
+        foreach (var source in SCut.Where(s => !s.IsOwnMaterial && s.CalculatedPlan == null))
+        {
+            if (!source.Services.Any(s => s.Quantity > 0))
+                errors.Add($"Позиция '{source.Sheet?.Name}': укажите количество резов");
+
+            if (!source.Details.Any() && source.ManualTaromest == 0)
+                errors.Add($"Позиция '{source.Sheet?.Name}': укажите количество таромест");
+        }
+
+        if (errors.Any())
+        {
+            var errorMsg = "Не заполнены обязательные поля:\n" + string.Join("\n", errors);
+            await JSRuntime.InvokeVoidAsync("alert", errorMsg);
+            hasValidationErrors = true;
+            StateHasChanged();
+            return;
+        }
+
+        // 1. Создаем ОДИН главный план для всего документа ДО цикла
+        var mainPlan = new CuttingPlan
+            {
+                NumCut = this.numCut,
+                Invoice = this.Invoice,
+                SheetLayouts = new List<SheetLayout>(),
+                UnplacedDetails = new List<Detail>(),
+                TotalCuts = 0,
+                TotalMaterialUsage = 0,
+                TotalWastePercentage = 0,
+                OptimizationAlgorithm = "N-Stage Guillotine BSP with Collinear Merging"
+            };
+
+        // 2. Наполняем его листами из каждой строки
+        foreach (var source in SCut)
+        {
+            if (source.IsOwnMaterial)
+            {
+                var layout = new SheetLayout
+                    {
+                        Sheet = new Sheet { Name = source.OwnMaterialName, SKU = "OWN", BarCode = "OWN", CutPrice = 0, Quantity = 1 },
+                        CutCount = source.Services.Sum(s => s.Quantity),
+                        DetailsCount = source.ManualTaromest,
+                        Details = new List<CutDetail>(),
+                        CuttingServiceName = source.Services.FirstOrDefault(s => s.IsDefaultCuttingService)?.ServiceName ?? "Резка",
+                        Services = source.Services.Select(s => new SheetServiceItem
+                        {
+                            ServiceId = s.ServiceId,
+                            ServiceName = s.ServiceName,
+                            ServiceCode = s.ServiceCode,
+                            Price = s.Price,
+                            Quantity = s.Quantity,
+                            IsDefaultCuttingService = s.IsDefaultCuttingService
+                        }).ToList()
+                    };
+                mainPlan.SheetLayouts.Add(layout);
+            }
+            else if (source.CalculatedPlan != null)
+            {
+                var mainService = source.Services.FirstOrDefault(s => s.IsDefaultCuttingService);
+
+                // Проходим ТОЛЬКО по листам, которые принадлежат этому источнику
+                foreach (var layout in source.CalculatedPlan.SheetLayouts)
+                {
+                    layout.CuttingServiceName = mainService?.ServiceName ?? "Резка";
+
+                    var layoutServices = new List<SheetServiceItem>();
+                    foreach (var s in source.Services)
+                    {
+                        if (s.IsDefaultCuttingService)
+                        {
+                            layoutServices.Add(new SheetServiceItem
+                                {
+                                    ServiceId = s.ServiceId,
+                                    ServiceName = s.ServiceName,
+                                    ServiceCode = s.ServiceCode,
+                                    Price = s.Price,
+                                    Quantity = layout.CutCount, // Реальное кол-во резов этого листа
+                                    IsDefaultCuttingService = true
+                                });
+                        }
+                        else
+                        {
+                            layoutServices.Add(new SheetServiceItem
+                                {
+                                    ServiceId = s.ServiceId,
+                                    ServiceName = s.ServiceName,
+                                    ServiceCode = s.ServiceCode,
+                                    Price = s.Price,
+                                    Quantity = s.Quantity,
+                                    IsDefaultCuttingService = false
+                                });
+                        }
+                    }
+                    layout.Services = layoutServices;
+                    layout.DetailsCount = layout.Details.Count; // Реальное кол-во деталей этого листа
+
+                    mainPlan.SheetLayouts.Add(layout);
+                }
+
+                if (source.CalculatedPlan.UnplacedDetails != null)
+                {
+                    mainPlan.UnplacedDetails.AddRange(source.CalculatedPlan.UnplacedDetails);
+                }
+            }
+            else
+            {
+                var layout = new SheetLayout
+                    {
+                        Sheet = source.Sheet,
+                        CutCount = source.Services.Sum(s => s.Quantity),
+                        DetailsCount = source.ManualTaromest,
+                        Details = new List<CutDetail>(),
+                        CuttingServiceName = source.Services.FirstOrDefault(s => s.IsDefaultCuttingService)?.ServiceName ?? "Резка",
+                        Services = source.Services.Select(s => new SheetServiceItem
+                        {
+                            ServiceId = s.ServiceId,
+                            ServiceName = s.ServiceName,
+                            ServiceCode = s.ServiceCode,
+                            Price = s.Price,
+                            Quantity = s.Quantity,
+                            IsDefaultCuttingService = s.IsDefaultCuttingService
+                        }).ToList()
+                    };
+                mainPlan.SheetLayouts.Add(layout);
             }
         }
 
-        /*ResultPlan = CuttingService.OptimizeCutting(SelectedSheets, Details);
-        State.SetPlan(ResultPlan, SelectedSheets);*/
+        // 3. Пересчитываем итоги для главного плана перед сохранением
+        mainPlan.TotalCuts = mainPlan.SheetLayouts.Sum(l => l.CutCount);
+        double totalSheetArea = mainPlan.SheetLayouts.Sum(sl => sl.Sheet.Width * sl.Sheet.Length);
+        double totalUsedArea = mainPlan.SheetLayouts.Sum(sl => sl.Details.Sum(d => d.Width * d.Length));
+        if (totalSheetArea > 0)
+        {
+            mainPlan.TotalMaterialUsage = totalUsedArea / totalSheetArea;
+            mainPlan.TotalWastePercentage = 100.0 - (mainPlan.TotalMaterialUsage * 100.0);
+        }
 
-        var guid = await CuttingService.StoreCuttingPlan(ResultListPlan, userId, Invoice);
+        // 4. Отправляем на сервер СТРОГО ОДИН план в списке!
+        var plansToSave = new List<CuttingPlan> { mainPlan };
 
-        State.SetPlan(ResultListPlan);
+        if (!string.IsNullOrEmpty(SavedGuid))
+        {
+            await CuttingService.UpdateCuttingPlan(SavedGuid, plansToSave, userId, Invoice);
+            successMessage = $"Раскрой №{this.numCut} обновлён.";
+        }
+        else
+        {
+            SavedGuid = await CuttingService.StoreCuttingPlan(plansToSave, userId, Invoice, true);
+            if (!string.IsNullOrEmpty(SavedGuid))
+            {
+                currentShiftNumber = await CuttingService.GetShiftNumberAsync(userId, SavedGuid);
+                successMessage = $"Раскрой №{this.numCut} (№{currentShiftNumber} в смене) сохранён.";
+                NavigationManager.NavigateTo($"/cut/{SavedGuid}", forceLoad: false);
+            }
+        }
 
         StateHasChanged();
-        await InvokeAsync(StateHasChanged);
-
-        // Даем времени событию сработать (немного ждём)
-        await Task.Yield(); // ← Это важно: дает циклу обработки UI шанс "проглотить" событие
-
-        var data = JsonSerializer.Serialize(ResultListPlan);
-        var encodedData = Uri.EscapeDataString(data);
-
-        //NavigationManager.NavigateTo($"/cutting-plan?sheets={ResultPlan.FirstOrDefault().SheetsUsed}&usage={ResultPlan.FirstOrDefault().MaterialUsage}");
-        NavigationManager.NavigateTo($"/cutting-plan/{guid}");
-        //NavigationManager.NavigateTo($"/cutting-plan");
     }
 
-    public void Dispose()
+    // ===== ПЕЧАТЬ БЛАНКА =====
+    private async Task PrintBlankInNewWindow(PdfPrintMode mode)
     {
-        Console.WriteLine($"[Home] Dispose called. State InstanceId: {State.InstanceId}");
-        State.OnChangeAsync -= HandleStateChangeAsync;
-        State.OnChange -= StateHasChanged;
-    }
-
-    public class CalculationModel
-    {
-        public List<int> SelectedSheetIds { get; set; } = new();
-    }
-
-    public string ActiveSheet(bool active) => (active) ? "list-group-item d-flex justify-content-between align-items-center sheet-active rounded" : "list-group-item d-flex justify-content-between align-items-center sheet-item";
-
-    private void OpenAddDetailModal(CuttingSource sheet)
-    {
-        targetSheetForNewDetail = sheet;
-        NewDetailModal = new Detail(); // Сброс значений
-        showAddDetailModal = true;
-    }
-
-    private void CloseModal()
-    {
-        showAddDetailModal = false;
-        targetSheetForNewDetail = null;
-    }
-
-    private void AddDetailFromModal()
-    {
-        if (targetSheetForNewDetail == null) return;
-
-        // Генерируем имя детали
-        NewDetailModal.Name = $"Деталь {targetSheetForNewDetail.Details.Count + 1}";
-
-        // Добавляем деталь в выбранный лист
-        targetSheetForNewDetail.Details.Add(NewDetailModal);
-
-        // Закрываем модалку
-        CloseModal();
-    }
-
-    private async Task HandleModalKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
+        // 1. Если бланк заблокирован (предыдущие дни) — сразу открываем PDF без проверок и сохранения
+        if (isLocked)
         {
-            AddDetailFromModal();
+            if (!string.IsNullOrEmpty(SavedGuid))
+            {
+                await JSRuntime.InvokeVoidAsync("open", $"/api/pdf/{SavedGuid}?mode={mode}", "_blank");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Ошибка: идентификатор бланка не найден.");
+            }
+            return; // Выходим, дальше код выполнять не нужно
+        }
+
+        // 2. Стандартная логика для ТЕКУЩЕГО дня (с проверками и сохранением)
+        if (!SCut.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Добавьте хотя бы одну позицию!");
+            return;
+        }
+
+        var errors = new List<string>();
+        foreach (var source in SCut.Where(s => !s.IsOwnMaterial && s.CalculatedPlan == null))
+        {
+            if (!source.Services.Any(s => s.Quantity > 0))
+                errors.Add($"Позиция '{source.Sheet?.Name}': укажите количество резов");
+
+            if (!source.Details.Any() && source.ManualTaromest == 0)
+                errors.Add($"Позиция '{source.Sheet?.Name}': укажите количество таромест");
+        }
+
+        if (errors.Any())
+        {
+            var errorMsg = "Не заполнены обязательные поля:\n" + string.Join("\n", errors);
+            await JSRuntime.InvokeVoidAsync("alert", errorMsg);
+            hasValidationErrors = true;
+            StateHasChanged();
+            return;
+        }
+
+        // Сначала сохраняем/обновляем (только для текущего дня)
+        await SaveAllPlans();
+
+        // Открываем PDF в новой вкладке
+        if (!string.IsNullOrEmpty(SavedGuid))
+        {
+            // Преобразуем Enum в строку для URL (Full, BlankOnly или LayoutsOnly)
+            var modeString = mode.ToString();
+            await JSRuntime.InvokeVoidAsync("open", $"/api/pdf/{SavedGuid}?mode={modeString}", "_blank");
+
+            successMessage = $"Документ открыт в новой вкладке (Режим: {GetModeName(mode)}).";
+            StateHasChanged();
         }
     }
 
-    [Inject] private IServiceScopeFactory ScopedServices { get; set; } = null!;
+    // Вспомогательный метод для красивого названия в уведомлении
+    private string GetModeName(PdfPrintMode mode) => mode switch
+    {
+        PdfPrintMode.Full => "Бланк + Раскрой",
+        PdfPrintMode.BlankOnly => "Только Бланк",
+        PdfPrintMode.LayoutsOnly => "Только Раскрой",
+        _ => "Неизвестно"
+    };
+
+    // Печать SVG
+    private async Task PrintSheetLayout(SheetLayout sheetLayout)
+    {
+        var svgContent = GenerateSheetSvgNormalized(sheetLayout);
+
+        var isLandscape = sheetLayout.Sheet.Width > sheetLayout.Sheet.Length;
+
+        // Генерируем таблицу деталей
+        var tableRows = new StringBuilder();
+        var idx = 1;
+        foreach (var detail in sheetLayout.Details.GroupBy(d => new { d.Name, d.Length, d.Width }).Select((g, i) => new { Group = g, Index = i + 1 }))
+        {
+            tableRows.Append($@"
+            <tr>
+                <td>{detail.Index}</td>
+                <td>{detail.Group.Key.Name}</td>
+                <td>{detail.Group.Key.Length}</td>
+                <td>{detail.Group.Key.Width}</td>
+                <td>{detail.Group.Count()}</td>
+            </tr>");
+            idx++;
+        }
+
+        var htmlContent = $@"
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='utf-8'>
+            <title>Раскрой - {numCut}</title>
+            <style>
+                * {{
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }}
+                body {{
+                    font-family: Arial, sans-serif;
+                    padding: 10mm;
+                    width: 297mm;
+                    height: 210mm;
+                }}
+                .header {{
+                    text-align: center;
+                    margin-bottom: 5mm;
+                    font-size: 16px;
+                    font-weight: bold;
+                }}
+                .sheet-info {{
+                    margin-bottom: 5mm;
+                    font-size: 11px;
+                    line-height: 1.4;
+                }}
+                .svg-container {{
+                    width: 100%;
+                    height: 60%;
+                    border: 0px solid #333;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                svg {{
+                    max-width: 100%;
+                    max-height: 100%;
+                    width: auto;
+                    height: auto;
+                }}
+                .details-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 10px;
+                    margin-top: 5mm;
+                    height: 35%;
+                }}
+                .details-table table {{
+                    border-spacing: 0;
+                }}
+                .details-table th, .details-table td {{
+                    border: 1px solid #333;
+                    padding: 3px 5px;
+                    text-align: center;
+                }}
+                .details-table th {{
+                    background-color: #f0f0f0;
+                }}
+                .details-table h3 {{
+                    margin: 0 0 3px 0;
+                    font-size: 12px;
+                    text-align: left;
+                }}
+                @media print {{
+                    @page {{
+                        size: A4 landscape;
+                        margin: 10mm;
+                    }}
+                    body {{
+                        width: 100%;
+                        height: 100%;
+                        padding: 5mm;
+                    }}
+                    .no-print {{
+                        display: none !important;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class='header'>Бланк № {numCut}</div>
+            <div class='sheet-info'>
+                <strong>Лист:</strong> {sheetLayout.Sheet.Name} ({sheetLayout.Sheet.Length} × {sheetLayout.Sheet.Width} мм)<br>
+                <strong>Артикул:</strong> {sheetLayout.Sheet.SKU}<br>
+                <strong>Деталей:</strong> {sheetLayout.Details.Count} |
+                <strong>Резов:</strong> {sheetLayout.CutCount} |
+                <strong>Эффективность:</strong> {sheetLayout.MaterialUsage:P1}
+            </div>
+            <div class='svg-container'>
+            {svgContent}
+            </div>
+            <div class='details-table'>
+                <h3>Детали на листе:</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>№</th>
+                            <th>Название</th>
+                            <th>Длина (мм)</th>
+                            <th>Ширина (мм)</th>
+                            <th>Кол-во</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {tableRows}
+                    </tbody>
+                </table>
+            </div>
+            <button class='no-print' onclick='window.print()' style='position: fixed; bottom: 10px; left: 10px; padding: 10px 20px; font-size: 14px; cursor: pointer;'>
+                🖨️ Печать
+            </button>
+            <script>
+                window.onload = function() {{
+                    setTimeout(function() {{
+                        window.print();
+                    }}, 300);
+                }};
+            </script>
+        </body>
+        </html>";
+
+        await JSRuntime.InvokeVoidAsync("openPrintWindow", htmlContent);
+    }
+
+    private string GenerateSheetSvgNormalized(SheetLayout sheetLayout)
+    {
+        var sb = new StringBuilder();
+
+        var maxDim = Math.Max(sheetLayout.Sheet.Width, sheetLayout.Sheet.Length);
+        var scale = 400.0 / maxDim;
+
+        var normWidth = sheetLayout.Sheet.Width * scale;
+        var normLength = sheetLayout.Sheet.Length * scale;
+
+        sb.Append($"<svg xmlns='http://www.w3.org/2000/svg' height='500px' width='100%' viewBox='0 0 {normWidth:F0} {normLength:F0}' preserveAspectRatio='xMidYMid meet' style='display: block; max-width: 100%;'>");
+
+        // Фон
+        sb.Append($"<rect x='0' y='0' width='{normWidth:F0}' height='{normLength:F0}' fill='white' stroke='#333' stroke-width='2' />");
+
+        // Штриховка
+        // Штриховка ТОЛЬКО в пределах листа
+        var hatchSpacing = 10;
+        for (double y = 0; y < normLength; y += hatchSpacing)
+        {
+            for (double x = 0; x < normWidth; x += hatchSpacing)
+            {
+                var x1 = x.ToString("F1").Replace(",", ".");
+                var y1 = y.ToString("F1").Replace(",", ".");
+                var x2 = (x + hatchSpacing).ToString("F1").Replace(",", ".");
+                var y2 = (y + hatchSpacing).ToString("F1").Replace(",", ".");
+
+                sb.Append($"<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='#999' stroke-width='1' opacity='0.3' />");
+            }
+        }
+
+        // Детали с УНИКАЛЬНЫМ индексом
+        if (sheetLayout.Details != null)
+        {
+            for (int i = 0; i < sheetLayout.Details.Count; i++)
+            {
+                var detail = sheetLayout.Details[i];
+                var x = detail.X * scale;
+                var y = (sheetLayout.Sheet.Length - detail.Y - detail.Length) * scale;
+                var w = detail.Width * scale;
+                var h = detail.Length * scale;
+                var centerX = x + w / 2;
+                var centerY = y + h / 2;
+
+                var xStr = x.ToString("F1").Replace(",", ".");
+                var yStr = y.ToString("F1").Replace(",", ".");
+                var wStr = w.ToString("F1").Replace(",", ".");
+                var hStr = h.ToString("F1").Replace(",", ".");
+                var centerXStr = centerX.ToString("F1").Replace(",", ".");
+                var centerYStr = centerY.ToString("F1").Replace(",", ".");
+
+                var fontSize = Math.Max(10, 18 * scale).ToString("F0");
+                var rectId = $"rect_{i}";
+
+                // Прямоугольник с УНИКАЛЬНЫМ data-idx
+                sb.Append($"<rect id='{rectId}' data-idx='{i}' x='{xStr}' y='{yStr}' width='{wStr}' height='{hStr}' ");
+                sb.Append($"fill='white' stroke='#2E7D32' stroke-width='2' style='cursor: pointer;' ");
+                sb.Append($"onmouseover=\"this.style.fill='#E8F5E9'\" ");
+                sb.Append($"onmouseout=\"if(!this.classList.contains('sel')){{this.style.fill='white'}}\" ");
+                sb.Append($"onclick=\"highlightByIndex({i})\" />");
+
+                // Название детали ПО ЦЕНТРУ
+                sb.Append($"<text x='{centerXStr}' y='{centerYStr}' text-anchor='middle' dominant-baseline='middle' font-size='{fontSize}' fill='#2E7D32' font-weight='bold' style='pointer-events: none;'>{detail.Name}</text>");
+
+                // Горизонтальный размер (ширина) - ВНУТРИ, над нижней линией, по центру
+                var widthText = detail.Width.ToString();
+                var widthY = (y + h - 2).ToString("F1").Replace(",", ".");
+                sb.Append($"<text x='{centerXStr}' y='{widthY}' text-anchor='middle' font-size='{Math.Max(8, 11 * scale):F0}' fill='#666' style='pointer-events: none;'>{widthText}</text>");
+
+                // Вертикальный размер (длина) - ВНУТРИ, справа от вертикальной линии, по центру
+                var lengthText = detail.Length.ToString();
+                var lengthX = (x + w - 5).ToString("F1").Replace(",", ".");
+                sb.Append($"<text x='{lengthX}' y='{centerYStr}' text-anchor='middle' dominant-baseline='middle' font-size='{Math.Max(8, 11 * scale):F0}' fill='#666' transform='rotate(-90, {lengthX}, {centerYStr})' style='pointer-events: none;'>{lengthText}</text>");
+            }
+        }
+
+        // Линии реза
+        if (sheetLayout.CutLines != null)
+        {
+            foreach (var cutLine in sheetLayout.CutLines.Where(cl => cl.IsVisible))
+            {
+                var color = cutLine.Type == "vertical" ? "#d32f2f" : "#1976d2";
+                var dash = cutLine.Type == "vertical" ? "6,4" : "4,6";
+                var x1 = (cutLine.X1 * scale).ToString("F1").Replace(",", ".");
+                var y1 = ((sheetLayout.Sheet.Length - cutLine.Y1) * scale).ToString("F1").Replace(",", ".");
+                var x2 = (cutLine.X2 * scale).ToString("F1").Replace(",", ".");
+                var y2 = ((sheetLayout.Sheet.Length - cutLine.Y2) * scale).ToString("F1").Replace(",", ".");
+
+                sb.Append($"<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='{color}' stroke-width='2' stroke-dasharray='{dash}' opacity='0.7' stroke-linecap='round' />");
+            }
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+
+    // Метод открытия модального окна управления профилями
+    private void OpenProfileManager(CuttingConstraintProfile? profile = null)
+    {
+        if (!userStoreId.HasValue) return;
+
+        if (profile == null)
+        {
+            isEditingExistingProfile = false;
+            editingProfileInCut = new CuttingConstraintProfile
+                {
+                    StoreId = userStoreId.Value,
+                    IsDefault = !availableConstraintProfiles.Any(p => p.IsDefault),
+                    BladeWidth = 3.2,
+                    CanRotateParts = true,
+                    MaxCutLength = 3000
+                };
+        }
+        else
+        {
+            isEditingExistingProfile = true;
+            // Создаем копию, чтобы не ломать список до сохранения
+            editingProfileInCut = new CuttingConstraintProfile
+                {
+                    Id = profile.Id,
+                    StoreId = profile.StoreId,
+                    Name = profile.Name,
+                    IsDefault = profile.IsDefault,
+                    BladeWidth = profile.BladeWidth,
+                    MarginTop = profile.MarginTop,
+                    MarginBottom = profile.MarginBottom,
+                    MarginLeft = profile.MarginLeft,
+                    MarginRight = profile.MarginRight,
+                    MinDistanceBetweenParts = profile.MinDistanceBetweenParts,
+                    CanRotateParts = profile.CanRotateParts,
+                    MaxCutLength = profile.MaxCutLength
+                };
+        }
+        isProfileModalOpen = true;
+    }
     
+
+    private void CloseProfileManager() { isProfileModalOpen = false; editingProfileInCut = new(); }
+
+    // ГЛАВНЫЙ МЕТОД: Сохранение профиля и ТРИГГЕР ПЕРЕСЧЕТА
+    private async Task SaveProfileInCut()
+    {
+        await ConstraintService.SaveProfileAsync(editingProfileInCut);
+        CloseProfileManager();
+
+        // Обновляем список профилей
+        availableConstraintProfiles = await ConstraintService.GetProfilesAsync(userStoreId.Value);
+
+        // Если редактировали активный профиль - обновляем его в SCut
+        var activeSource = SCut.FirstOrDefault(s => s.IsActive);
+        if (activeSource?.Constraints?.Id == editingProfileInCut.Id)
+        {
+            var updated = availableConstraintProfiles.FirstOrDefault(p => p.Id == editingProfileInCut.Id);
+            if (updated != null)
+            {
+                activeSource.Constraints = updated;
+
+                // СБРОС РАСЧЕТОВ при изменении параметров
+                foreach (var source in SCut.Where(s => s.CalculatedPlan != null))
+                {
+                    source.CalculatedPlan = null;
+                    source.IsCutCountManuallyEdited = false;
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task DeleteProfileInCut(int profileId)
+    {
+        // Проверка: нельзя удалить, если он используется в активном листе
+        var activeSource = SCut.FirstOrDefault(s => s.IsActive);
+        if (activeSource?.Constraints?.Id == profileId)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Нельзя удалить профиль, который сейчас используется! Выберите другой профиль.");
+            return;
+        }
+
+        // Проверка: нельзя удалить профиль по умолчанию
+        var profileToDelete = availableConstraintProfiles.FirstOrDefault(p => p.Id == profileId);
+        if (profileToDelete?.IsDefault == true)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Нельзя удалить профиль по умолчанию!");
+            return;
+        }
+
+        await ConstraintService.DeleteAsync(profileId);
+        availableConstraintProfiles = await ConstraintService.GetProfilesAsync(userStoreId.Value);
+        StateHasChanged();
+    }
+
+    private void OnConstraintIdChanging(int newValue)
+    {
+        var activeSource = SCut.FirstOrDefault(s => s.IsActive);
+        if (activeSource?.Constraints == null) return;
+
+        var selected = availableConstraintProfiles.FirstOrDefault(p => p.Id == newValue);
+        if (selected != null)
+        {
+            // КРИТИЧЕСКИ ВАЖНО: Создаем НОВЫЙ экземпляр (клон), а не присваиваем ссылку!
+            // Это разрывает связь со списком availableConstraintProfiles и защищает его от мутации.
+            activeSource.Constraints = new CuttingConstraintProfile
+                {
+                    Id = selected.Id,
+                    StoreId = selected.StoreId,
+                    Name = selected.Name,
+                    IsDefault = selected.IsDefault,
+                    BladeWidth = selected.BladeWidth,
+                    MarginTop = selected.MarginTop,
+                    MarginBottom = selected.MarginBottom,
+                    MarginLeft = selected.MarginLeft,
+                    MarginRight = selected.MarginRight,
+                    MinDistanceBetweenParts = selected.MinDistanceBetweenParts,
+                    CanRotateParts = selected.CanRotateParts,
+                    MaxCutLength = selected.MaxCutLength
+                };
+
+            // Логика сброса расчетов
+            var hasCalculatedSheets = SCut.Any(s => s.CalculatedPlan != null);
+            if (hasCalculatedSheets)
+            {
+                foreach (var source in SCut.Where(s => s.CalculatedPlan != null))
+                {
+                    source.CalculatedPlan = null;
+                    source.IsCutCountManuallyEdited = false;
+
+                    var cuttingService = source.Services.FirstOrDefault(s => s.IsDefaultCuttingService);
+                    if (cuttingService != null)
+                    {
+                        cuttingService.Quantity = 0;
+                    }
+                }
+
+                successMessage = "⚠️ Профиль изменен! Расчеты сброшены. Нажмите 'Расчёт' заново.";
+
+                // Неблокирующая задержка для скрытия сообщения (не вешает UI)
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    successMessage = null;
+                    await InvokeAsync(StateHasChanged);
+                });
+            }
+
+            // Мгновенно обновляем UI, чтобы новые параметры отобразились справа
+            StateHasChanged();
+        }
+    }
+
+
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
+
+    public class AvailableServiceDto
+    {
+        public int ServiceId { get; set; }
+        public string ServiceName { get; set; } = string.Empty;
+        public string? ServiceCode { get; set; }
+        public float Price { get; set; }
+    }
+
+
+
 }

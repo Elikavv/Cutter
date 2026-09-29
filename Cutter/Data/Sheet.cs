@@ -1,4 +1,6 @@
-﻿namespace Cutter.Data
+﻿using static Cutter.Data.DBModels;
+
+namespace Cutter.Data
 {
     public class Sheet
     {
@@ -22,6 +24,14 @@
         public bool CanRotateParts { get; set; } = true; // Разрешен поворот деталей
         public double MaxCutLength { get; set; } = 3000; // Максимальная длина реза
 
+        public double MarginTop { get; set; } = 0;      // Отступ сверху (по оси Y)
+        public double MarginBottom { get; set; } = 0;   // Отступ снизу (по оси Y)
+        public double MarginLeft { get; set; } = 0;     // Отступ слева (по оси X)
+        public double MarginRight { get; set; } = 0;    // Отступ справа (по оси X)
+
+        public int? MaterialTypeId { get; set; }
+        public MaterialType? MaterialType { get; set; }
+
         public Sheet Clone()
         {
             return new Sheet
@@ -41,8 +51,12 @@
                 MinDistanceBetweenParts = this.MinDistanceBetweenParts,
                 CanRotateParts = this.CanRotateParts,
                 MaxCutLength = this.MaxCutLength,
-                CutPrice = this.CutPrice
-    };
+                CutPrice = this.CutPrice,
+                MarginTop = this.MarginTop,
+                MarginBottom = this.MarginBottom,
+                MarginLeft = this.MarginLeft,
+                MarginRight = this.MarginRight
+            };
         }
     }
 

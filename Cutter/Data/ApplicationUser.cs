@@ -10,6 +10,7 @@ namespace Cutter.Data
         public Guid StoreId { get; set; }
         public string Role { get; set; } = "User";
         public virtual Store Store { get; set; } = null!;
+        public ICollection<ManagerStore> ManagerStores { get; set; } = new List<ManagerStore>();
     }
 
 }

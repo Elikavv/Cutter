@@ -33,6 +33,7 @@ namespace Cutter.Services
         public Guid? Id { get; set; }
         public int ServiceId { get; set; }
         public string ServiceName { get; set; } = string.Empty;
+        public string? ServiceCode { get; set; }
         public string? Description { get; set; }
         public bool IsExtraService { get; set; }
         public float Price { get; set; }
@@ -42,6 +43,7 @@ namespace Cutter.Services
     {
         public int ServiceId { get; set; }
         public string ServiceName { get; set; } = string.Empty;
+        public string? ServiceCode { get; set; }
         public string? Description { get; set; }
         public bool IsExtraService { get; set; }
     }
@@ -61,8 +63,8 @@ namespace Cutter.Services
 
         Task<List<ServicePriceDto>> GetStorePricesAsync(Guid storeId);
         Task<List<AvailableServiceDto>> GetAvailableServicesForStoreAsync(Guid storeId);
-        Task AddServiceToStoreAsync(Guid storeId, int serviceId, float price);
-        Task UpdateServicePriceAsync(Guid priceId, float newPrice);
+        Task AddServiceToStoreAsync(Guid storeId, int serviceId, float price, string? serviceCode = null);
+        Task UpdateServicePriceAsync(Guid priceId, float newPrice, string? serviceCode = null);
         Task RemoveServiceFromStoreAsync(Guid priceId);
     }
 
@@ -190,6 +192,7 @@ namespace Cutter.Services
                               Id = price.Id,
                               ServiceId = service.Id,
                               ServiceName = service.Name,
+                              ServiceCode = price.ServiceCode,
                               Description = service.Description,
                               IsExtraService = service.IsExtraService,
                               Price = price.Price
@@ -213,20 +216,20 @@ namespace Cutter.Services
                 .ToListAsync();
         }
 
-        public async Task AddServiceToStoreAsync(Guid storeId, int serviceId, float price)
+        public async Task AddServiceToStoreAsync(Guid storeId, int serviceId, float price, string? serviceCode = null)
         {
             await using var context = await _contextFactory.CreateDbContextAsync();
             var existing = await context.StoreServicePrices.FirstOrDefaultAsync(p => p.StoreId == storeId && p.ServiceId == serviceId);
-            if (existing != null) { existing.IsActive = true; existing.Price = price; }
-            else { context.StoreServicePrices.Add(new StoreServicePrice { StoreId = storeId, ServiceId = serviceId, Price = price, IsActive = true }); }
+            if (existing != null) { existing.IsActive = true; existing.Price = price; existing.ServiceCode = serviceCode; }
+            else { context.StoreServicePrices.Add(new StoreServicePrice { StoreId = storeId, ServiceId = serviceId, Price = price, ServiceCode = serviceCode, IsActive = true }); }
             await context.SaveChangesAsync();
         }
 
-        public async Task UpdateServicePriceAsync(Guid priceId, float newPrice)
+        public async Task UpdateServicePriceAsync(Guid priceId, float newPrice, string? serviceCode = null)
         {
             await using var context = await _contextFactory.CreateDbContextAsync();
             var price = await context.StoreServicePrices.FindAsync(priceId);
-            if (price != null) { price.Price = newPrice; await context.SaveChangesAsync(); }
+            if (price != null) { price.Price = newPrice; if (serviceCode != null) price.ServiceCode = serviceCode; await context.SaveChangesAsync(); }
         }
 
         public async Task RemoveServiceFromStoreAsync(Guid priceId)

@@ -46,5 +46,6 @@ namespace Cutter.Data
         public float Price { get; set; }
 
         public bool IsActive { get; set; } = true;
+        public string? ServiceCode { get; set; }
     }
 }

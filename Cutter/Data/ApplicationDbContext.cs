@@ -14,6 +14,8 @@ namespace Cutter.Data
         public DbSet<StoreItem> StoreItems { get; set; }
         public DbSet<CuttingServiceModel> CuttingServices { get; set; }
         public DbSet<StoreServicePrice> StoreServicePrices { get; set; }
+        public DbSet<ManagerStore> ManagerStores { get; set; } = null!;
+        public DbSet<CuttingConstraintProfile> CuttingConstraintProfiles { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -114,6 +116,25 @@ namespace Cutter.Data
                .WithMany(s => s.MaterialTypes)
                .HasForeignKey(m => m.DefaultCuttingServiceId)
                .OnDelete(DeleteBehavior.SetNull); // Если услугу деактивируют/удалят, тип материала останется, но ссылка обнулится
+
+
+            // Менеджер распилорвок
+            builder.Entity<ManagerStore>(entity =>
+            {
+                entity.HasKey(e => new { e.ManagerId, e.StoreId });
+
+                entity.HasOne(e => e.Manager)
+                      .WithMany(u => u.ManagerStores)
+                      .HasForeignKey(e => e.ManagerId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Store)
+                      .WithMany()
+                      .HasForeignKey(e => e.StoreId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => e.StoreId);
+            });
 
         }
     }

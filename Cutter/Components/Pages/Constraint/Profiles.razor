@@ -1,0 +1,210 @@
+﻿@page "/constraint-profiles"
+@attribute [Authorize(Roles = "AdminStore, AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Cutter.Data
+@using Cutter.Services
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@inject IConstraintProfileService ProfileService
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Управление профилями ограничений</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 style="color: #0055A4;">⚙️ Профили технологических ограничений</h2>
+        <button class="btn text-white" style="background-color: #F58220;" @onclick="() => OpenModal()">
+            ➕ Добавить профиль
+        </button>
+    </div>
+
+    <!-- Выбор магазина (ТОЛЬКО для AdminSuper) -->
+    @if (isSuperAdmin)
+    {
+        <div class="card mb-4 border-warning">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-3 fw-bold text-muted">Управление магазином:</div>
+                    <div class="col-md-9">
+                        <select class="form-select" @bind="selectedStoreId" @bind:after="LoadData">
+                            @foreach (var store in allStores)
+                            {
+                                <option value="@store.Id">@store.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5"><div class="spinner-border" style="color: #0055A4;"></div></div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Название</th>
+                            <th>Пила</th>
+                            <th>Отступы (В/Н/Л/П)</th>
+                            <th>Поворот</th>
+                            <th class="text-end">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var profile in profiles)
+                        {
+                            <tr style="@(profile.IsDefault ? "background-color: #f0fdf4;" : "")">
+                                <td><div class="fw-bold">@profile.Name @(profile.IsDefault ? "<span class='badge bg-success ms-2'>По умолчанию</span>" : "")</div></td>
+                                <td>@profile.BladeWidth мм</td>
+                                <td><small class="text-muted">В:@profile.MarginTop Н:@profile.MarginBottom Л:@profile.MarginLeft П:@profile.MarginRight</small></td>
+                                <td>@(profile.CanRotateParts ? "✅" : "❌")</td>
+                                <td class="text-end">
+                                    @if (!profile.IsDefault)
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => SetAsDefault(profile.Id)">Основной</button>
+                                    }
+                                    <button class="btn btn-sm btn-outline-secondary me-2" @onclick="() => OpenModal(profile)">Изменить</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteProfile(profile.Id)" disabled="@(profile.IsDefault)">Удалить</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Модальное окно (такое же, как в предыдущем ответе, сокращено для краткости, используй то же самое) -->
+@if (isModalOpen)
+{
+    <div class="modal d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #0055A4; color: white;">
+                    <h5 class="modal-title">@(editingProfile.Id == 0 ? "Новый профиль" : "Редактирование")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingProfile" OnValidSubmit="SaveProfile">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="alert alert-danger" />
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold">Название профиля *</label>
+                                <InputText class="form-control" @bind-Value="editingProfile.Name" placeholder="Например: Станок 1 (пила 4мм)" />
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <div class="form-check">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editingProfile.IsDefault" />
+                                    <label class="form-check-label fw-bold">По умолчанию</label>
+                                </div>
+                            </div>
+                            <div class="col-12"><hr /></div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Ширина реза (мм)</label>
+                                <InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.BladeWidth" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Мин. расстояние между деталями (мм)</label>
+                                <InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.MinDistanceBetweenParts" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Макс. длина реза (мм)</label>
+                                <InputNumber class="form-control" step="1" @bind-Value="editingProfile.MaxCutLength" />
+                            </div>
+
+                            <div class="col-12"><h6 class="text-primary mb-2">Отступы от края листа (мм)</h6></div>
+                            <div class="col-md-3"><label class="form-label">Верх</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.MarginTop" /></div>
+                            <div class="col-md-3"><label class="form-label">Низ</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.MarginBottom" /></div>
+                            <div class="col-md-3"><label class="form-label">Лево</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.MarginLeft" /></div>
+                            <div class="col-md-3"><label class="form-label">Право</label><InputNumber class="form-control" step="0.1" @bind-Value="editingProfile.MarginRight" /></div>
+
+                            <div class="col-12"><hr /></div>
+                            <div class="col-md-6 d-flex align-items-center">
+                                <div class="form-check form-switch">
+                                    <InputCheckbox class="form-check-input" style="width: 3em; height: 1.5em;" @bind-Value="editingProfile.CanRotateParts" />
+                                    <label class="form-check-label fw-bold ms-2">Разрешить поворот деталей</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer mt-4 px-0 pb-0">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseModal">Отмена</button>
+                            <button type="submit" class="btn text-white" style="background-color: #0055A4;">💾 Сохранить</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isSuperAdmin = false;
+    private List<CuttingConstraintProfile> profiles = new();
+    private List<(Guid Id, string Name)> allStores = new();
+    private Guid selectedStoreId;
+
+    private bool isModalOpen = false;
+    private CuttingConstraintProfile editingProfile = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        isSuperAdmin = user.IsInRole("AdminSuper");
+
+        allStores = await ProfileService.GetAllStoresAsync();
+
+        if (isSuperAdmin && allStores.Any())
+        {
+            selectedStoreId = allStores.First().Id;
+        }
+        else
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userStore = await Db.Users.FindAsync(userId);
+            selectedStoreId = userStore?.StoreId ?? Guid.Empty;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        if (selectedStoreId == Guid.Empty) return;
+        isLoading = true;
+        StateHasChanged();
+        try { profiles = await ProfileService.GetProfilesAsync(selectedStoreId); }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private void OpenModal(CuttingConstraintProfile? profile = null)
+    {
+        editingProfile = profile == null ? new CuttingConstraintProfile { StoreId = selectedStoreId, IsDefault = !profiles.Any(p => p.IsDefault), BladeWidth = 3.2, CanRotateParts = true }
+                                         : new CuttingConstraintProfile { Id = profile.Id, StoreId = profile.StoreId, Name = profile.Name, IsDefault = profile.IsDefault, BladeWidth = profile.BladeWidth, MarginTop = profile.MarginTop, MarginBottom = profile.MarginBottom, MarginLeft = profile.MarginLeft, MarginRight = profile.MarginRight, MinDistanceBetweenParts = profile.MinDistanceBetweenParts, CanRotateParts = profile.CanRotateParts, MaxCutLength = profile.MaxCutLength };
+        isModalOpen = true;
+    }
+
+    private void CloseModal() { isModalOpen = false; }
+
+    private async Task SaveProfile()
+    {
+        await ProfileService.SaveProfileAsync(editingProfile);
+        CloseModal();
+        await LoadData();
+    }
+
+    private async Task SetAsDefault(int profileId) { await ProfileService.SetDefaultAsync(profileId, selectedStoreId); await LoadData(); }
+    private async Task DeleteProfile(int profileId) { await ProfileService.DeleteAsync(profileId); await LoadData(); }
+}

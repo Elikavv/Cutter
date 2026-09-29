@@ -1,0 +1,166 @@
+﻿@using Cutter.Services
+@using System.Security.Claims
+@inject IBlankSearchService BlankSearchService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager Navigation
+
+<div class="position-relative w-100">
+    <div class="input-group">
+        <span class="input-group-text bg-white border-end-0 text-muted">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
+                <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
+            </svg>
+        </span>
+        <input type="text"
+               class="form-control border-start-0"
+               placeholder="№ бланка или договор..."
+               value="@searchQuery"
+               @oninput="OnSearchInput"
+               @onfocus="OnFocus"
+               @onblur="OnBlur"
+               style="border-radius: 0 4px 4px 0; font-size: 0.9rem;" />
+    </div>
+
+    @if (showResults && results.Any())
+    {
+        <div class="card shadow position-absolute w-100 mt-1 border-0" style="z-index: 1050; max-height: 450px; overflow-y: auto;">
+            <div class="list-group list-group-flush">
+                @foreach (var item in results)
+                {
+                    <a href="/cut/@item.GUUID"
+                       class="list-group-item list-group-item-action py-2"
+                       style="cursor: pointer; border-left: 3px solid transparent;"
+                       @onmousedown="() => SelectResult(item)">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="fw-bold" style="color: #0055A4; font-size: 0.95rem;">
+                                    Бланк #@item.NumCut
+                                    @if (item.IsPaid)
+                                    {
+                                        <span class="badge bg-success ms-2" style="font-size: 0.65rem; vertical-align: middle;">ОПЛАЧЕН</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger ms-2" style="font-size: 0.65rem; vertical-align: middle;">НЕ ОПЛАЧЕН</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrEmpty(item.Invoice))
+                                {
+                                    <div class="small text-muted">📄 Договор: @item.Invoice</div>
+                                }
+                                <div class="small text-muted">
+                                    🕒 @item.CreateDate.ToString("dd.MM.yyyy HH:mm") · 👤 @item.CreatorName
+                                </div>
+                            </div>
+                            <span class="badge bg-primary align-self-start mt-1">Открыть</span>
+                        </div>
+                    </a>
+                }
+            </div>
+        </div>
+    }
+    else if (showResults && !string.IsNullOrWhiteSpace(searchQuery) && searchQuery.Length >= 2 && !isLoading)
+    {
+        <div class="card shadow position-absolute w-100 mt-1 border-0" style="z-index: 1050;">
+            <div class="card-body text-center text-muted py-3">
+                Ничего не найдено по запросу "<strong>@searchQuery</strong>"
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string searchQuery = "";
+    private List<BlankSearchResult> results = new();
+    private bool showResults = false;
+    private bool isLoading = false;
+    private string? currentUserId;
+    private CancellationTokenSource? debounceCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    }
+
+    private void OnFocus()
+    {
+        if (results.Any() && searchQuery.Length >= 2) showResults = true;
+    }
+
+    private void OnBlur()
+    {
+        // Небольшая задержка, чтобы клик по ссылке успел сработать до закрытия
+        _ = Task.Delay(200).ContinueWith(_ =>
+        {
+            InvokeAsync(() => { showResults = false; StateHasChanged(); });
+        });
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString()?.Trim() ?? "";
+
+        // Отменяем предыдущий таймер, если пользователь продолжает печатать
+        debounceCts?.Cancel();
+
+        if (string.IsNullOrWhiteSpace(searchQuery) || searchQuery.Length < 2)
+        {
+            results.Clear();
+            showResults = false;
+            return;
+        }
+
+        // Создаем новый токен для задержки 300мс (Debounce)
+        debounceCts = new CancellationTokenSource();
+        var token = debounceCts.Token;
+
+        try
+        {
+            await Task.Delay(300, token);
+            await PerformSearch();
+        }
+        catch (TaskCanceledException)
+        {
+            // Это нормальное поведение: пользователь нажал следующую клавишу, старый поиск отменен
+        }
+    }
+
+    private async Task PerformSearch()
+    {
+        if (string.IsNullOrEmpty(currentUserId)) return;
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            results = await BlankSearchService.SearchAsync(currentUserId, searchQuery);
+            showResults = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка поиска: {ex.Message}");
+            results.Clear();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectResult(BlankSearchResult item)
+    {
+        showResults = false;
+        searchQuery = "";
+        // forceLoad: true гарантирует полный переход на страницу бланка
+        Navigation.NavigateTo($"/cut/{item.GUUID}", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        debounceCts?.Cancel();
+        debounceCts?.Dispose();
+    }
+}

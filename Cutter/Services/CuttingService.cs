@@ -1,6 +1,8 @@
-﻿using Cutter.Data;
+﻿using Cutter.Components.Account.Pages.Manage;
+using Cutter.Data;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using System.Numerics;
 
 
 namespace Cutter.Services
@@ -104,6 +106,169 @@ namespace Cutter.Services
     }
 
 
+    // Параметры подрезки кромки
+    [Flags]
+    public enum SheetEdge
+    {
+        None = 0,
+        Left = 1 << 0,
+        Right = 1 << 1,
+        Bottom = 1 << 2,
+        Top = 1 << 3,
+        All = Left | Right | Bottom | Top
+    }
+
+    public class TrimmingSettings
+    {
+        public SheetEdge Edges { get; set; } = SheetEdge.None;
+        public double LeftMargin { get; set; } = 0;
+        public double RightMargin { get; set; } = 0;
+        public double BottomMargin { get; set; } = 0;
+        public double TopMargin { get; set; } = 0;
+
+        public bool Has(SheetEdge edge) => (Edges & edge) == edge;
+    }
+
+    // На главной странице пользователей
+    public class UserCuttingSummaryDto
+    {
+        public string GUUID { get; set; } = string.Empty;
+        public string NumCut { get; set; } = string.Empty;
+        public string? Invoice { get; set; }
+        public DateTime CreateDate { get; set; }
+        public string? UserName { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalServicesAmount { get; set; }
+        public decimal TotalSheetsAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public int ShiftNumber { get; set; }
+    }
+
+    public class UserDashboardDto
+    {
+        public int CuttingPlansCount { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalServicesAmount { get; set; }
+        public decimal TotalSheetsAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public List<UserCuttingSummaryDto> TodayCuttings { get; set; } = new();
+    }
+
+
+    // DTO для строки таблицы в админ-панели
+    public class AdminCuttingPlanDto
+    {
+        public string GUUID { get; set; } = string.Empty;
+        public string NumCut { get; set; } = string.Empty;
+        public string StoreName { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
+        public DateTime CreateDate { get; set; }
+        public bool IsSave { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalServicesAmount { get; set; }
+        public decimal TotalSheetsAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    // DTO для карточек статистики
+    public class AdminDashboardSummaryDto
+    {
+        public int TotalPlans { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalServicesAmount { get; set; }
+        public decimal TotalSheetsAmount { get; set; }
+    }
+
+    // Общий DTO для ответа сервиса
+    public class AdminDashboardDto
+    {
+        public AdminDashboardSummaryDto Summary { get; set; } = new();
+        public List<AdminCuttingPlanDto> Plans { get; set; } = new();
+        public List<Store> AllStores { get; set; } = new();
+        public List<ApplicationUser> AllUsers { get; set; } = new();
+    }
+
+    // Manager DTO
+    public class StoreStatDto
+    {
+        public Guid StoreId { get; set; }
+        public string StoreName { get; set; } = string.Empty;
+        public int TotalPlans { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; }
+        public List<EmployeeStatDto> Employees { get; set; } = new();
+    }
+
+    public class EmployeeStatDto
+    {
+        public string UserName { get; set; } = string.Empty;
+        public Guid StoreId { get; set; }
+        public string StoreName { get; set; } = string.Empty;
+        public int PlansCount { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    public class DailyStatDto
+    {
+        public string DateLabel { get; set; } = string.Empty;
+        public int PlansCount { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    public class ManagerDashboardDto
+    {
+        public int TotalPlans { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; }
+        public EmployeeStatDto? TopEmployee { get; set; }
+        public List<EmployeeStatDto> TopEmployees { get; set; } = new();
+        public List<DailyStatDto> DailyStats { get; set; } = new();
+        public List<ManagerCuttingPlanDto> RecentPlans { get; set; } = new();
+        public List<StoreStatDto> StoreStats { get; set; } = new(); // НОВОЕ: статистика по магазинам
+    }
+
+    public class ManagerCuttingPlanDto
+    {
+        public string GUUID { get; set; } = string.Empty;
+        public string NumCut { get; set; } = string.Empty;
+        public int ShiftNumber { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string StoreName { get; set; } = string.Empty; // НОВОЕ
+        public DateTime CreateDate { get; set; }
+        public bool IsSave { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    public class DailyTrendDto
+    {
+        public string DateLabel { get; set; } = string.Empty;
+        public int ActualPlans { get; set; } // Бланки
+        public int ActualCuts { get; set; }
+        public decimal ActualAmount { get; set; }
+        public int? ForecastPlans { get; set; } // Прогноз бланков
+        public int? ForecastCuts { get; set; } // Прогноз резов
+        public decimal? ForecastAmount { get; set; } // Прогноз суммы
+    }
+
+    public class EmployeePerformanceDto
+    {
+        public string UserName { get; set; } = string.Empty;
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; }
+        public int WorkDays { get; set; }
+        public decimal AvgPerDay => WorkDays > 0 ? TotalAmount / WorkDays : 0;
+    }
+
+    public class ManagerStatsDto
+    {
+        public int TotalPlans { get; set; }
+        public int TotalCuts { get; set; }
+        public decimal TotalAmount { get; set; } // Только услуги!
+        public List<DailyTrendDto> TrendData { get; set; } = new();
+        public List<EmployeePerformanceDto> EmployeeStats { get; set; } = new();
+    }
+
     /**************************************/
     public class CuttingService
     {
@@ -116,12 +281,35 @@ namespace Cutter.Services
             _db = db;
         }
 
-        public CuttingPlan OptimizeCutting(List<Sheet> availableSheets, List<Detail> details)
+        public async Task<string?> GetUserStoreCodeAsync(string userId)
         {
-            return GuillotineAlgorithm3.GuillotineCut(availableSheets, details);
+            return await _db.Users
+                .Where(x => x.Id == userId)
+                .Select(s => s.Store.StoreCode)
+                .FirstOrDefaultAsync();
         }
 
-        public async Task<string?> StoreCuttingPlan(List<CuttingPlan> plans, string UserId = null, string? Invoice = null)
+        public async Task<string?> GetNumCutAsync(string hashId)
+        {
+            /*return await _db.Users
+                .Where(x => x.Id == userId)
+                .Select(s => s.Store.StoreCode)
+                .FirstOrDefaultAsync();*/
+
+
+            return await _db.CutPlan
+                .Where(h => h.GUUID == hashId)
+                .Select(n => n.NumCut)
+                .FirstOrDefaultAsync();
+        }
+
+        public CuttingPlan OptimizeCutting(List<Sheet> availableSheets, List<Detail> details)
+        {
+            //return GuillotineAlgorithm3.GuillotineCut(availableSheets, details);
+            return GuillotineAlgorithm4.GuillotineCut(availableSheets, details);
+        }
+
+        public async Task<string?> StoreCuttingPlan(List<CuttingPlan> plans, string UserId = null, string? Invoice = null, bool isSave = false)
         {
             if(plans == null || plans.Count == 0 || string.IsNullOrEmpty(UserId)) return null;
 
@@ -139,6 +327,7 @@ namespace Cutter.Services
                 NumCut = NumCut,
                 CuttingPlan = JsonConvert.SerializeObject(plans),
                 UserId = UserId ?? null,
+                IsSave = isSave,
                 Invoice = string.IsNullOrEmpty(Invoice) ? null : Invoice
             });
 
@@ -152,23 +341,34 @@ namespace Cutter.Services
         {
             if (string.IsNullOrEmpty(HashId)) return null;
 
-            return  await _db.CutPlan
-                    .Where(x => x.GUUID == HashId)
-                    .Select(cp => new UserCuttingPlan
-                    { 
-                        StoreName = cp.User.Store.Name,
-                        UserName = cp.User.UserName,
-                        Phone = cp.User.Store.Phone,
-                        StoreAddress = cp.User.Store.Address,
-                        CutBarCode = cp.User.Store.CutBarCode,
-                        NumCut = cp.NumCut,
-                        CuttingPlan = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan),
-                        Invoice = cp.Invoice
-                    }
-                    ).FirstOrDefaultAsync();
+            // 1. Сначала получаем саму запись с необходимыми связями
+            var cp = await _db.CutPlan
+                .Include(x => x.User).ThenInclude(u => u.Store)
+                .FirstOrDefaultAsync(x => x.GUUID == HashId);
 
-            //return JsonConvert.DeserializeObject<List<CuttingPlan>>(_db.CutPlan.FirstOrDefault(p => p.GUUID == HashId).CuttingPlan);
+            if (cp == null) return null;
 
+            // 2. Вычисляем номер в смене: считаем все бланки этого магазина за сегодня, 
+            // которые были созданы раньше текущего (или имеют меньший Id, если время совпало)
+            var shiftNumber = await _db.CutPlan.CountAsync(x =>
+                x.User.StoreId == cp.User.StoreId &&
+                x.CreateDate.Date == cp.CreateDate.Date &&
+                (x.CreateDate < cp.CreateDate || (x.CreateDate == cp.CreateDate && x.Id <= cp.Id))
+            );
+
+            // 3. Формируем DTO (здесь уже безопасно использовать JsonConvert)
+            return new UserCuttingPlan
+            {
+                StoreName = cp.User.Store.Name,
+                UserName = cp.User.UserName,
+                Phone = cp.User.Store.Phone,
+                StoreAddress = cp.User.Store.Address,
+                CutBarCode = cp.User.Store.CutBarCode,
+                NumCut = cp.NumCut,
+                ShiftNumber = shiftNumber, // <-- Заполняем вычисленный номер
+                CuttingPlan = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan),
+                Invoice = cp.Invoice
+            };
         }
 
         public async Task<List<CuttingPlan>> GetCuttingPlan(string HashId)
@@ -213,10 +413,648 @@ namespace Cutter.Services
 
         }
 
+        /*public async Task SetCuttingPlanLocked(string hashId, bool isLocked)
+        {
+            var cutPlan = _db.CutPlan.FirstOrDefault(p => p.GUUID == hashId);
+            if (cutPlan != null)
+            {
+                cutPlan.IsSave = isLocked;
+                if (isLocked)
+                    cutPlan.SaveDate = DateTime.Now;
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        public async Task<bool> IsCuttingPlanLocked(string hashId)
+        {
+            var cutPlan = _db.CutPlan.FirstOrDefault(p => p.GUUID == hashId);
+            return cutPlan?.IsSave ?? false;
+        }*/
+
+        public async Task UpdateCuttingPlan(string hashId, List<CuttingPlan> plans, string userId, string invoice)
+        {
+            var cutPlan = _db.CutPlan.FirstOrDefault(p => p.GUUID == hashId);
+            if (cutPlan != null)
+            {
+                cutPlan.CuttingPlan = JsonConvert.SerializeObject(plans);
+                cutPlan.ModifierId = userId;
+                cutPlan.Invoice = invoice;
+                cutPlan.ModifyDate = DateTime.Now;
+                await _db.SaveChangesAsync();
+            }
+        }
+        public async Task<DateTime?> GetCuttingPlanDate(string hashId)
+        {
+            var cutPlan = _db.CutPlan.FirstOrDefault(p => p.GUUID == hashId);
+            return cutPlan?.CreateDate;
+        }
+
+        public async Task<UserDashboardDto> GetUserDashboardAsync(string userId, bool isAdmin)
+        {
+            var today = DateTime.Today;
+
+            // 1. Получаем данные, сортируя по возрастанию (чтобы правильно посчитать порядковый номер)
+            var query = _db.CutPlan
+                .Include(cp => cp.User)
+                .Where(cp => cp.CreateDate.Date == today && cp.IsSave && (isAdmin || cp.UserId == userId));
+
+            var dbPlans = await query.OrderBy(cp => cp.CreateDate).ThenBy(cp => cp.Id).ToListAsync();
+
+            var result = new UserDashboardDto
+            {
+                CuttingPlansCount = dbPlans.Count,
+                TodayCuttings = new List<UserCuttingSummaryDto>()
+            };
+
+            // 2. Словарь-счетчик: для каждого магазина свой счетчик, начинающийся с 1
+            var storeCounters = new Dictionary<Guid, int>();
+
+            foreach (var dbPlan in dbPlans)
+            {
+                var storeId = dbPlan.User?.StoreId ?? Guid.Empty;
+                if (!storeCounters.ContainsKey(storeId))
+                {
+                    storeCounters[storeId] = 0;
+                }
+                storeCounters[storeId]++;
+                int shiftNumber = storeCounters[storeId]; // Это и есть номер бланка в смене для этого магазина
+
+                var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(dbPlan.CuttingPlan);
+
+                int planCuts = 0;
+                decimal planServices = 0;
+                decimal planSheets = 0;
+
+                if (plans != null)
+                {
+                    foreach (var plan in plans)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            planCuts += layout.CutCount;
+
+                            if (layout.Services != null && layout.Services.Any())
+                            {
+                                planServices += layout.Services.Sum(s => (decimal)s.Price * s.Quantity);
+                            }
+                            else
+                            {
+                                planServices += (decimal)(layout.CutCount * (layout.Sheet?.CutPrice ?? 0));
+                            }
+
+                            if (layout.Sheet != null && layout.Sheet.SKU != "OWN")
+                            {
+                                planSheets += (decimal)(layout.Sheet.Price * layout.Sheet.Quantity);
+                            }
+                        }
+                    }
+                }
+
+                result.TotalCuts += planCuts;
+                result.TotalServicesAmount += planServices;
+                result.TotalSheetsAmount += planSheets;
+                result.TotalAmount += (planServices + planSheets);
+
+                result.TodayCuttings.Add(new UserCuttingSummaryDto
+                {
+                    GUUID = dbPlan.GUUID,
+                    NumCut = dbPlan.NumCut,
+                    ShiftNumber = shiftNumber, // <--- ЗАПОЛНЯЕМ НОМЕР В СМЕНЕ
+                    Invoice = dbPlan.Invoice,
+                    CreateDate = dbPlan.CreateDate,
+                    UserName = dbPlan.User?.UserName ?? "Неизвестно",
+                    TotalCuts = planCuts,
+                    TotalServicesAmount = planServices,
+                    TotalSheetsAmount = planSheets,
+                    TotalAmount = planServices + planSheets
+                });
+            }
+
+            // 3. Сортируем обратно по убыванию даты, чтобы в интерфейсе новые были сверху
+            result.TodayCuttings = result.TodayCuttings.OrderByDescending(x => x.CreateDate).ToList();
+
+            return result;
+        }
+
+        public async Task<AdminDashboardDto> GetAdminDashboardAsync(
+            DateTime startDate,
+            DateTime endDate,
+            IEnumerable<Guid> storeIds,
+            IEnumerable<string> userIds,
+            bool showSaved,
+            bool showDrafts)
+        {
+            var result = new AdminDashboardDto();
+
+            // 1. Загружаем справочники (они маленькие, это быстро)
+            result.AllStores = await _db.Stores.OrderBy(s => s.Name).ToListAsync();
+            result.AllUsers = await _db.Users.Include(u => u.Store).OrderBy(u => u.UserName).ToListAsync();
+
+            // 2. Формируем запрос к БД
+            var query = _db.CutPlan
+                .Include(cp => cp.User).ThenInclude(u => u.Store)
+                .Where(cp => cp.CreateDate.Date >= startDate && cp.CreateDate.Date <= endDate);
+
+            // Применяем фильтры НА СТОРОНЕ БД (это критически важно для производительности)
+            if (storeIds != null && storeIds.Any())
+            {
+                query = query.Where(cp => storeIds.Contains(cp.User.StoreId));
+            }
+
+            if (userIds != null && userIds.Any())
+            {
+                query = query.Where(cp => userIds.Contains(cp.UserId));
+            }
+
+            query = query.Where(cp => (cp.IsSave && showSaved) || (!cp.IsSave && showDrafts));
+
+            // 3. Выполняем запрос
+            var dbPlans = await query.OrderByDescending(cp => cp.CreateDate).ToListAsync();
+
+            // 4. Обрабатываем результаты и считаем статистику
+            foreach (var dbPlan in dbPlans)
+            {
+                var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(dbPlan.CuttingPlan);
+
+                int planCuts = 0;
+                decimal planServices = 0;
+                decimal planSheets = 0;
+
+                if (plans != null)
+                {
+                    foreach (var plan in plans)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            // Правильный расчет: берем CutCount
+                            planCuts += layout.CutCount;
+
+                            // Правильный расчет: суммируем услуги
+                            if (layout.Services != null && layout.Services.Any())
+                            {
+                                planServices += layout.Services.Sum(s => (decimal)s.Price * s.Quantity);
+                            }
+                            else
+                            {
+                                planServices += (decimal)(layout.CutCount * (layout.Sheet?.CutPrice ?? 0));
+                            }
+
+                            // Правильный расчет: суммируем листы (исключая "Свой материал")
+                            if (layout.Sheet != null && layout.Sheet.SKU != "OWN")
+                            {
+                                planSheets += (decimal)(layout.Sheet.Price * layout.Sheet.Quantity);
+                            }
+                        }
+                    }
+                }
+
+                result.Summary.TotalPlans++;
+                result.Summary.TotalCuts += planCuts;
+                result.Summary.TotalServicesAmount += planServices;
+                result.Summary.TotalSheetsAmount += planSheets;
+
+                result.Plans.Add(new AdminCuttingPlanDto
+                {
+                    GUUID = dbPlan.GUUID,
+                    NumCut = dbPlan.NumCut,
+                    StoreName = dbPlan.User?.Store?.Name ?? "—",
+                    UserName = dbPlan.User?.UserName ?? "—",
+                    CreateDate = dbPlan.CreateDate,
+                    IsSave = dbPlan.IsSave,
+                    TotalCuts = planCuts,
+                    TotalServicesAmount = planServices,
+                    TotalSheetsAmount = planSheets,
+                    TotalAmount = planServices + planSheets
+                });
+            }
+
+            return result;
+        }
+
+
+        public async Task<ManagerDashboardDto> GetManagerDashboardAsync(string managerId, DateTime startDate, DateTime endDate)
+        {
+            var result = new ManagerDashboardDto();
+
+            // 1. Находим все магазины менеджера через таблицу ManagerStores
+            var managedStoreIds = await _db.ManagerStores
+                .Where(ms => ms.ManagerId == managerId)
+                .Select(ms => ms.StoreId)
+                .ToListAsync();
+
+            // Fallback: если нет записей в ManagerStores, пробуем найти по StoreId пользователя
+            if (!managedStoreIds.Any())
+            {
+                var manager = await _db.Users.FindAsync(managerId);
+                if (manager?.StoreId != null)
+                {
+                    managedStoreIds.Add(manager.StoreId);
+                }
+            }
+
+            if (!managedStoreIds.Any()) return result;
+
+            // 2. Находим всех подчиненных (роль "User") во всех магазинах менеджера
+            var subordinates = await _db.Users
+                .Include(u => u.Store)
+                .Where(u => managedStoreIds.Contains(u.StoreId) && (u.Role == "User" ||u.Role == "Manager" ))
+                .OrderBy(u => u.Store.Name)
+                .ThenBy(u => u.UserName)
+                .ToListAsync();
+
+            var subordinateIds = subordinates.Select(u => u.Id).ToList();
+            if (!subordinateIds.Any()) return result;
+
+            // 3. Загружаем все планы за период
+            var dbPlans = await _db.CutPlan
+                .Include(cp => cp.User).ThenInclude(u => u.Store)
+                .Where(cp => cp.CreateDate.Date >= startDate && cp.CreateDate.Date <= endDate)
+                .Where(cp => subordinateIds.Contains(cp.UserId))
+                .OrderByDescending(cp => cp.CreateDate)
+                .ToListAsync();
+
+            // 4. Определяем формат группировки: по часам или по дням
+            var uniqueDates = dbPlans.Select(p => p.CreateDate.Date).Distinct().ToList();
+            bool groupByHours = uniqueDates.Count == 1;
+
+            // 5. Считаем статистику
+            var userStats = new Dictionary<string, EmployeeStatDto>();
+            var dailyStats = new Dictionary<string, DailyStatDto>();
+            var storeStats = new Dictionary<Guid, StoreStatDto>();
+
+            foreach (var dbPlan in dbPlans)
+            {
+                decimal planAmount = 0;
+                int planCuts = 0;
+
+                var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(dbPlan.CuttingPlan);
+                if (plans != null)
+                {
+                    foreach (var plan in plans)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            planCuts += layout.CutCount;
+
+                            // Считаем ТОЛЬКО услуги (без стоимости листов)
+                            if (layout.Services != null && layout.Services.Any())
+                                planAmount += layout.Services.Sum(s => (decimal)s.Price * s.Quantity);
+                            else
+                                planAmount += (decimal)(layout.CutCount * (layout.Sheet?.CutPrice ?? 0));
+                        }
+                    }
+                }
+
+                result.TotalPlans++;
+                result.TotalCuts += planCuts;
+                result.TotalAmount += planAmount;
+
+                // Статистика по сотрудникам
+                var uName = dbPlan.User?.UserName ?? "Неизвестно";
+                var storeName = dbPlan.User?.Store?.Name ?? "Неизвестный магазин";
+                var storeId = dbPlan.User?.StoreId ?? Guid.Empty;
+
+                if (!userStats.ContainsKey(uName))
+                    userStats[uName] = new EmployeeStatDto
+                    {
+                        UserName = uName,
+                        StoreId = storeId,
+                        StoreName = storeName
+                    };
+
+                userStats[uName].PlansCount++;
+                userStats[uName].TotalCuts += planCuts;
+                userStats[uName].TotalAmount += planAmount;
+
+                // Статистика по магазинам
+                if (!storeStats.ContainsKey(storeId))
+                    storeStats[storeId] = new StoreStatDto
+                    {
+                        StoreId = storeId,
+                        StoreName = storeName
+                    };
+
+                storeStats[storeId].TotalPlans++;
+                storeStats[storeId].TotalCuts += planCuts;
+                storeStats[storeId].TotalAmount += planAmount;
+
+                // Добавляем сотрудника в статистику магазина
+                if (!storeStats[storeId].Employees.Any(e => e.UserName == uName))
+                {
+                    storeStats[storeId].Employees.Add(new EmployeeStatDto
+                    {
+                        UserName = uName,
+                        StoreId = storeId,
+                        StoreName = storeName
+                    });
+                }
+                var empInStore = storeStats[storeId].Employees.First(e => e.UserName == uName);
+                empInStore.PlansCount++;
+                empInStore.TotalCuts += planCuts;
+                empInStore.TotalAmount += planAmount;
+
+                // Статистика по времени (по часам или по дням)
+                var timeLabel = groupByHours
+                    ? dbPlan.CreateDate.ToString("HH:mm")
+                    : dbPlan.CreateDate.ToString("dd.MM");
+
+                if (!dailyStats.ContainsKey(timeLabel))
+                    dailyStats[timeLabel] = new DailyStatDto { DateLabel = timeLabel };
+
+                dailyStats[timeLabel].PlansCount++;
+                dailyStats[timeLabel].TotalAmount += planAmount;
+            }
+
+            // 6. Формируем итоговые списки
+            result.TopEmployees = userStats.Values.OrderByDescending(x => x.TotalAmount).ToList();
+            result.TopEmployee = result.TopEmployees.FirstOrDefault();
+
+            // Сортировка зависит от формата
+            result.DailyStats = groupByHours
+                ? dailyStats.Values.OrderBy(x => x.DateLabel).ToList()
+                : dailyStats.Values.OrderBy(x => DateTime.ParseExact(x.DateLabel, "dd.MM", null)).ToList();
+
+            result.StoreStats = storeStats.Values.OrderBy(s => s.StoreName).ToList();
+
+            // 7. Последние бланки (до 50 штук) с правильной суммой
+            result.RecentPlans = dbPlans.Take(50).Select(cp =>
+            {
+                decimal planAmount = 0;
+                var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan);
+                if (plans != null)
+                {
+                    foreach (var plan in plans)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            // Только услуги
+                            if (layout.Services != null && layout.Services.Any())
+                                planAmount += layout.Services.Sum(s => (decimal)s.Price * s.Quantity);
+                            else
+                                planAmount += (decimal)(layout.CutCount * (layout.Sheet?.CutPrice ?? 0));
+                        }
+                    }
+                }
+
+                return new ManagerCuttingPlanDto
+                {
+                    GUUID = cp.GUUID,
+                    NumCut = cp.NumCut,
+                    UserName = cp.User?.UserName ?? "—",
+                    StoreName = cp.User?.Store?.Name ?? "—",
+                    CreateDate = cp.CreateDate,
+                    IsSave = cp.IsSave,
+                    TotalAmount = planAmount
+                };
+            }).ToList();
+
+            return result;
+        }
+
+
+        public async Task<ManagerStatsDto> GetManagerStatsAsync(string managerId, DateTime startDate, DateTime endDate, string? filterUserId = null)
+        {
+            var result = new ManagerStatsDto();
+
+            // 1. Магазины менеджера
+            var managedStoreIds = await _db.ManagerStores.Where(ms => ms.ManagerId == managerId).Select(ms => ms.StoreId).ToListAsync();
+            if (!managedStoreIds.Any())
+            {
+                var manager = await _db.Users.FindAsync(managerId);
+                if (manager?.StoreId != null) managedStoreIds.Add(manager.StoreId);
+            }
+            if (!managedStoreIds.Any()) return result;
+
+            // 2. Подчиненные
+            var queryUsers = _db.Users.Where(u => managedStoreIds.Contains(u.StoreId) && (u.Role == "User" || u.Role == "Manager"));
+            if (!string.IsNullOrEmpty(filterUserId))
+            {
+                queryUsers = queryUsers.Where(u => u.Id == filterUserId);
+            }
+            var subordinateIds = await queryUsers.Select(u => u.Id).ToListAsync();
+            if (!subordinateIds.Any()) return result;
+
+            // 3. Данные за период
+            var dbPlans = await _db.CutPlan
+                .Include(cp => cp.User)
+                .Where(cp => cp.CreateDate.Date >= startDate && cp.CreateDate.Date <= endDate)
+                .Where(cp => subordinateIds.Contains(cp.UserId))
+                .OrderBy(cp => cp.CreateDate)
+                .ToListAsync();
+
+            var dailyData = new Dictionary<string, DailyTrendDto>();
+            var empData = new Dictionary<string, EmployeePerformanceDto>();
+            var empWorkDays = new Dictionary<string, HashSet<string>>();
+
+            foreach (var cp in dbPlans)
+            {
+                int cuts = 0;
+                decimal amount = 0;
+                var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan);
+
+                if (plans != null)
+                {
+                    foreach (var plan in plans)
+                    {
+                        foreach (var layout in plan.SheetLayouts)
+                        {
+                            cuts += layout.CutCount;
+                            // ВАЖНО: Считаем ТОЛЬКО услуги, без стоимости листов
+                            if (layout.Services != null && layout.Services.Any())
+                                amount += layout.Services.Sum(s => (decimal)s.Price * s.Quantity);
+                            else
+                                amount += (decimal)(layout.CutCount * (layout.Sheet?.CutPrice ?? 0));
+                        }
+                    }
+                }
+
+                result.TotalPlans++;
+                result.TotalCuts += cuts;
+                result.TotalAmount += amount;
+
+                // Группировка по дням
+                var dateLabel = cp.CreateDate.ToString("dd.MM");
+                if (!dailyData.ContainsKey(dateLabel))
+                    dailyData[dateLabel] = new DailyTrendDto { DateLabel = dateLabel };
+                dailyData[dateLabel].ActualPlans++; // ✅ Добавлено
+                dailyData[dateLabel].ActualCuts += cuts;
+                dailyData[dateLabel].ActualAmount += amount;
+
+                // Группировка по сотрудникам
+                var uName = cp.User?.UserName ?? "Неизвестно";
+                if (!empData.ContainsKey(uName))
+                    empData[uName] = new EmployeePerformanceDto { UserName = uName };
+
+                empData[uName].TotalCuts += cuts;
+                empData[uName].TotalAmount += amount;
+
+                if (!empWorkDays.ContainsKey(uName))
+                    empWorkDays[uName] = new HashSet<string>();
+                empWorkDays[uName].Add(cp.CreateDate.ToString("yyyy-MM-dd"));
+            }
+
+            // 4. Расчет рабочих дней и сортировка сотрудников
+            foreach (var kvp in empData)
+            {
+                kvp.Value.WorkDays = empWorkDays.ContainsKey(kvp.Key) ? empWorkDays[kvp.Key].Count : 0;
+            }
+            result.EmployeeStats = empData.Values.OrderByDescending(e => e.TotalAmount).ToList();
+
+            // 5. Расчет простого прогноза (скользящее среднее за 3 дня)
+            // 5. Расчет прогноза (скользящее среднее за 3 дня) по всем трем метрикам
+            var sortedDays = dailyData.Values.OrderBy(d => DateTime.ParseExact(d.DateLabel, "dd.MM", null)).ToList();
+
+            for (int i = 0; i < sortedDays.Count; i++)
+            {
+                result.TrendData.Add(sortedDays[i]);
+            }
+
+            // Добавляем точку прогноза на "завтра" по всем трем метрикам
+            if (sortedDays.Count >= 3)
+            {
+                var last3 = sortedDays.TakeLast(3).ToList();
+
+                int avgPlans = (last3[0].ActualPlans + last3[1].ActualPlans + last3[2].ActualPlans) / 3;
+                int avgCuts = (last3[0].ActualCuts + last3[1].ActualCuts + last3[2].ActualCuts) / 3;
+                decimal avgAmount = (last3[0].ActualAmount + last3[1].ActualAmount + last3[2].ActualAmount) / 3;
+
+                var nextDate = DateTime.ParseExact(sortedDays.Last().DateLabel, "dd.MM", null).AddDays(1).ToString("dd.MM");
+
+                result.TrendData.Add(new DailyTrendDto
+                {
+                    DateLabel = nextDate + " (прогноз)",
+                    ActualPlans = 0,
+                    ActualCuts = 0,
+                    ActualAmount = 0,
+                    ForecastPlans = avgPlans,
+                    ForecastCuts = avgCuts,
+                    ForecastAmount = avgAmount
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Возвращает номер бланка в смене. 
+        /// Для новых бланков считает за сегодня. Для старых — за день их создания.
+        /// </summary>
+        public async Task<int> GetShiftNumberAsync(string userId, string? guuid = null)
+        {
+            var user = await _db.Users.FindAsync(userId);
+            if (user?.StoreId == null) return 1;
+
+            // СЦЕНАРИЙ 1: Новый бланк (считаем только за СЕГОДНЯ)
+            if (string.IsNullOrEmpty(guuid))
+            {
+                var today = DateTime.Today;
+                return await _db.CutPlan.CountAsync(cp =>
+                    cp.User.StoreId == user.StoreId &&
+                    cp.CreateDate.Date == today) + 1;
+            }
+
+            // СЦЕНАРИЙ 2: Существующий бланк (может быть любым днем)
+            var current = await _db.CutPlan.FirstOrDefaultAsync(cp => cp.GUUID == guuid);
+
+            if (current == null) return 1; // Защита на случай, если бланк не найден
+
+            // Берем дату ИМЕННО этого бланка, а не сегодня!
+            var planDate = current.CreateDate.Date;
+
+            // Считаем, сколько бланков в этом магазине в ЭТОТ день были созданы раньше 
+            // (или имеют меньший/равный Id, если время создания совпало с точностью до миллисекунды)
+            return await _db.CutPlan.CountAsync(cp =>
+                cp.User.StoreId == user.StoreId &&
+                cp.CreateDate.Date == planDate && // <-- ИСПРАВЛЕНО: используем дату самого бланка
+                (cp.CreateDate < current.CreateDate || (cp.CreateDate == current.CreateDate && cp.Id <= current.Id)));
+        }
+
+        /// <summary>
+        /// Возвращает номер СЛЕДУЮЩЕГО бланка (для нового, ещё не сохранённого)
+        /// </summary>
+        public async Task<int> GetNextShiftNumberAsync(string userId)
+        {
+            var user = await _db.Users.FindAsync(userId);
+            if (user?.StoreId == null) return 1;
+
+            var today = DateTime.Today;
+            var count = await _db.CutPlan
+                .CountAsync(cp => cp.User.StoreId == user.StoreId && cp.CreateDate.Date == today);
+
+            return count + 1;
+        }
+
+        /// <summary>
+        /// Возвращает словарь GUUID -> номер в смене для списка бланков
+        /// Используется на дашбордах, чтобы не делать N+1 запросов
+        /// </summary>
+        public async Task<Dictionary<string, int>> GetShiftNumbersMapAsync(DateTime date, IEnumerable<Guid> storeIds)
+        {
+            var plans = await _db.CutPlan
+                .Include(cp => cp.User)
+                .Where(cp => cp.CreateDate.Date == date && storeIds.Contains(cp.User.StoreId))
+                .OrderBy(cp => cp.CreateDate)
+                .ThenBy(cp => cp.Id)
+                .ToListAsync();
+
+            var result = new Dictionary<string, int>();
+            var counters = new Dictionary<Guid, int>();
+
+            foreach (var plan in plans)
+            {
+                var storeId = plan.User?.StoreId ?? Guid.Empty;
+                if (!counters.ContainsKey(storeId))
+                    counters[storeId] = 0;
+
+                counters[storeId]++;
+                result[plan.GUUID] = counters[storeId];
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Получить ID магазинов, которыми управляет менеджер
+        /// </summary>
+        public async Task<List<Guid>> GetManagerStoreIdsAsync(string managerId)
+        {
+            var storeIds = await _db.ManagerStores
+                .Where(ms => ms.ManagerId == managerId)
+                .Select(ms => ms.StoreId)
+                .ToListAsync();
+
+            // Fallback: если нет записей в ManagerStores
+            if (!storeIds.Any())
+            {
+                var manager = await _db.Users.FindAsync(managerId);
+                if (manager?.StoreId != null)
+                {
+                    storeIds.Add(manager.StoreId);
+                }
+            }
+
+            return storeIds;
+        }
+
+        /// <summary>
+        /// Получить список подчиненных (распиловщиков) менеджера
+        /// </summary>
+        public async Task<List<ApplicationUser>> GetSubordinatesAsync(string managerId)
+        {
+            var storeIds = await GetManagerStoreIdsAsync(managerId);
+
+            if (!storeIds.Any()) return new List<ApplicationUser>();
+
+            return await _db.Users
+                .Where(u => storeIds.Contains(u.StoreId) && (u.Role == "User" || u.Role == "Manager"))
+                .OrderBy(u => u.UserName)
+                .ToListAsync();
+        }
+
     }
 
     /***********GuilotineCut************/
-    public class GuillotineAlgorithm
+    /*public class GuillotineAlgorithm
     {
         private const double BladeWidth = 3.2;
         private const double MinMargin = 0;
@@ -261,11 +1099,6 @@ namespace Cutter.Services
                     CalculateCutLines(bestSheetLayout);
                     bestPlan.TotalCuts += bestSheetLayout.CutCount;
                     bestPlan.SheetLayouts.Add(bestSheetLayout);
-
-                    // Удаляем размещенные детали
-                    /*allDetails = allDetails.Except(bestSheetLayout.Details
-                        .Select(d => allDetails.First(ad => ad.Name == d.Name)))
-                        .ToList();*/
                     remainingDetails = RemovePlacedDetails(remainingDetails, bestSheetLayout);
                 }
             }
@@ -531,19 +1364,6 @@ namespace Cutter.Services
 
                 // Находим диапазон Y для этого вертикального промежутка
                 var yRange = GetVerticalCutRange(x1, x2, details, layout.Sheet.Length);
-
-                /*if (yRange.HasValue)
-                {
-                    layout.CutLines.Add(new CutLine
-                    {
-                        X1 = x1,
-                        Y1 = yRange.Value.Start,
-                        X2 = x1,
-                        Y2 = yRange.Value.End,
-                        Type = "vertical",
-                        IsVisible = true
-                    });
-                }*/
             }
         }
 
@@ -560,19 +1380,6 @@ namespace Cutter.Services
 
                 // Находим диапазон X для этого горизонтального промежутка
                 var xRange = GetHorizontalCutRange(y1, y2, details, layout.Sheet.Width);
-
-                /*if (xRange.HasValue)
-                {
-                    layout.CutLines.Add(new CutLine
-                    {
-                        X1 = xRange.Value.Start,
-                        Y1 = y1,
-                        X2 = xRange.Value.End,
-                        Y2 = y1,
-                        Type = "horizontal",
-                        IsVisible = true
-                    });
-                }*/
             }
         }
 
@@ -665,16 +1472,6 @@ namespace Cutter.Services
                     // Находим Y-диапазон для реза
                     double minY = columnGroup.Min(d => d.Y);
                     double maxY = columnGroup.Max(d => d.Y + d.Length);
-
-                    /*layout.CutLines.Add(new CutLine
-                    {
-                        X1 = cutX,
-                        Y1 = minY,
-                        X2 = cutX,
-                        Y2 = maxY,
-                        Type = "vertical",
-                        IsVisible = true
-                    });*/
                 }
             }
 
@@ -689,16 +1486,6 @@ namespace Cutter.Services
                     // Находим X-диапазон для реза
                     double minX = rowGroup.Min(d => d.X);
                     double maxX = rowGroup.Max(d => d.X + d.Width);
-
-                    /*layout.CutLines.Add(new CutLine
-                    {
-                        X1 = minX,
-                        Y1 = cutY,
-                        X2 = maxX,
-                        Y2 = cutY,
-                        Type = "horizontal",
-                        IsVisible = true
-                    });*/
                 }
             }
 
@@ -707,9 +1494,9 @@ namespace Cutter.Services
 
 
 
-    }
+    }*/
 
-    public class GuillotineAlgorithm2
+    /*public class GuillotineAlgorithm2
     {
         private const double BladeWidth = 3.2;  // Ширина реза
         private const double MinMargin = 0;     // Минимальный зазор
@@ -1004,9 +1791,9 @@ namespace Cutter.Services
                 plan.TotalWastePercentage = 100 - (plan.TotalMaterialUsage * 100);
             }
         }
-    }
+    }*/
 
-    public class GuillotineAlgorithm3
+    /*public class GuillotineAlgorithm3
     {
         private const double BladeWidth = 3.2;
         private const double MinMargin = 0;
@@ -1054,11 +1841,6 @@ namespace Cutter.Services
                     CalculateUniversalCuts(bestSheetLayout);
                     bestPlan.TotalCuts += bestSheetLayout.CutCount;
                     bestPlan.SheetLayouts.Add(bestSheetLayout);
-
-                    // Удаляем размещенные детали
-                    /*allDetails = allDetails.Except(bestSheetLayout.Details
-                        .Select(d => allDetails.First(ad => ad.Name == d.Name)))
-                        .ToList();*/
                     remainingDetails = RemovePlacedDetails(remainingDetails, bestSheetLayout);
                 }
             }
@@ -1443,18 +2225,6 @@ namespace Cutter.Services
         }
         private static GuillotineCut FindBestGuillotineCut(CutFragment fragment, double bladeWidth)
         {
-            /*var candidates = new List<GuillotineCut>();
-
-            var verticalCuts = FindVerticalGuillotineCuts(fragment, bladeWidth);
-            candidates.AddRange(verticalCuts);
-
-            var horizontalCuts = FindHorizontalGuillotineCuts(fragment, bladeWidth);
-            candidates.AddRange(horizontalCuts);
-
-            if (!candidates.Any()) return null;
-
-            // Жадно выбираем рез, отделяющий наибольшее количество деталей
-            return candidates.OrderByDescending(c => GetSeparatedDetailsCount(fragment, c, bladeWidth)).First();*/
             // Сначала ищем все вертикальные резы
             var verticalCuts = FindVerticalGuillotineCuts(fragment, bladeWidth);
 
@@ -1537,12 +2307,6 @@ namespace Cutter.Services
             var cuts = new List<GuillotineCut>();
             var events = new SortedSet<double>();
 
-            /*double minCut = fragment.X + bladeWidth / 2;
-            double maxCut = fragment.X + fragment.Width - bladeWidth / 2;
-
-            events.Add(minCut);
-            events.Add(maxCut);*/
-
             foreach (var detail in fragment.Details)
             {
                 if (detail.X > fragment.X + 0.1)
@@ -1591,12 +2355,6 @@ namespace Cutter.Services
         {
             var cuts = new List<GuillotineCut>();
             var events = new SortedSet<double>();
-
-            /*double minCut = fragment.Y + bladeWidth / 2;
-            double maxCut = fragment.Y + fragment.Height - bladeWidth / 2;
-
-            events.Add(minCut);
-            events.Add(maxCut);*/
 
             foreach (var detail in fragment.Details)
             {
@@ -1713,5 +2471,570 @@ namespace Cutter.Services
             return Math.Round(value, 2);
         }
 
+    }*/
+
+
+
+    public static class GuillotineAlgorithm4
+    {
+        private enum FreeRectChoiceHeuristic
+        {
+            BestAreaFit,
+            BestShortSideFit,
+            BestLongSideFit
+        }
+
+        private enum GuillotineSplitHeuristic
+        {
+            ShorterLeftoverAxis,
+            LongerLeftoverAxis,
+            MaximizeArea
+        }
+
+        private sealed class Rect
+        {
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double Width { get; set; }
+            public double Height { get; set; }
+
+            public Rect(double x, double y, double width, double height)
+            {
+                X = x;
+                Y = y;
+                Width = width;
+                Height = height;
+            }
+        }
+
+        public static CuttingPlan GuillotineCut(
+            List<Sheet> sheets,
+            List<Detail> details,
+            TrimmingSettings? trimming = null)
+        {
+            trimming ??= new TrimmingSettings();
+
+            var plan = new CuttingPlan
+            {
+                OptimizationAlgorithm = "N-Stage Guillotine BSP with Collinear Merging"
+            };
+
+            var remainingDetails = ExpandDetails(details);
+            int sheetNumber = 1;
+
+            foreach (var sheetTemplate in sheets)
+            {
+                for (int q = 0; q < sheetTemplate.Quantity; q++)
+                {
+                    if (!remainingDetails.Any()) break;
+
+                    var sheetInstance = sheetTemplate.Clone();
+                    var layout = OptimizeSingleSheetTournament(sheetInstance, remainingDetails, sheetNumber, trimming);
+
+                    if (layout.Details.Any())
+                    {
+                        layout.CutCount = layout.CutLines.Count;
+                        layout.DetailsCount = layout.Details.Count;
+                        layout.IsActive = true;
+
+                        plan.SheetLayouts.Add(layout);
+                        plan.TotalCuts += layout.CutCount;
+
+                        var placedIds = layout.Details.Select(d => d.DetailId).ToHashSet();
+                        remainingDetails = remainingDetails.Where(d => !placedIds.Contains(d.Id)).ToList();
+                        sheetNumber++;
+                    }
+                }
+            }
+
+            plan.UnplacedDetails = remainingDetails;
+            CalculateTotals(plan);
+
+            return plan;
+        }
+
+        private static SheetLayout OptimizeSingleSheetTournament(
+            Sheet sheet,
+            List<Detail> details,
+            int sheetNumber,
+            TrimmingSettings trimming)
+        {
+            double trimL = Math.Max(sheet.MarginLeft, Math.Max(sheet.MinMargin, trimming?.LeftMargin ?? 0));
+            double trimR = Math.Max(sheet.MarginRight, Math.Max(sheet.MinMargin, trimming?.RightMargin ?? 0));
+            double trimB = Math.Max(sheet.MarginBottom, Math.Max(sheet.MinMargin, trimming?.BottomMargin ?? 0));
+            double trimT = Math.Max(sheet.MarginTop, Math.Max(sheet.MinMargin, trimming?.TopMargin ?? 0));
+
+            double usableWidth = sheet.Width - trimL - trimR;
+            double usableLength = sheet.Length - trimB - trimT;
+
+            var emptyLayout = new SheetLayout { Sheet = sheet };
+            if (usableWidth <= 0 || usableLength <= 0) return emptyLayout;
+
+            var trimCutLines = GenerateTrimmingCuts(sheet, trimming, trimL, trimR, trimB, trimT);
+
+
+
+            // Набор турнирных стратегий сортировки деталей
+            var sortStrategies = new Func<List<Detail>, List<Detail>>[]
+            {
+            d => d.OrderByDescending(x => x.Width * x.Length).ThenByDescending(x => Math.Max(x.Width, x.Length)).ToList(),
+            d => d.OrderByDescending(x => Math.Max(x.Width, x.Length)).ThenByDescending(x => Math.Min(x.Width, x.Length)).ToList(),
+            d => d.OrderByDescending(x => Math.Min(x.Width, x.Length)).ThenByDescending(x => x.Width * x.Length).ToList(),
+            d => d.OrderByDescending(x => Math.Max(x.Width, x.Length) / Math.Max(0.01, Math.Min(x.Width, x.Length))).ToList()
+            };
+
+            var rectChoices = new[]
+            {
+            FreeRectChoiceHeuristic.BestShortSideFit,
+            FreeRectChoiceHeuristic.BestAreaFit,
+            FreeRectChoiceHeuristic.BestLongSideFit
+        };
+
+            var splitRules = new[]
+            {
+            GuillotineSplitHeuristic.LongerLeftoverAxis,
+            GuillotineSplitHeuristic.ShorterLeftoverAxis,
+            GuillotineSplitHeuristic.MaximizeArea
+        };
+
+            SheetLayout? bestLayout = null;
+            double bestScore = -1.0;
+
+            foreach (var sorter in sortStrategies)
+            {
+                var sortedDetails = sorter(details);
+
+                foreach (var rectChoice in rectChoices)
+                {
+                    foreach (var splitRule in splitRules)
+                    {
+                        var testLayout = RunGuillotineSimulation(
+                            sheet, sortedDetails, sheetNumber,
+                            trimL, trimR, trimB, trimT,
+                            usableWidth, usableLength,
+                            rectChoice, splitRule, trimCutLines);
+
+                        // Оценка: приоритет площади раскроя, штраф за количество резов
+                        double usedArea = testLayout.Details.Sum(d => d.Width * d.Length);
+                        double score = usedArea * 10000.0 - (testLayout.CutLines.Count * 2.0);
+
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            bestLayout = testLayout;
+                        }
+                    }
+                }
+            }
+
+            if (bestLayout == null) return emptyLayout;
+
+            // Постобработка: объединение коллинеарных линий резов
+            var mergedCuts = MergeCollinearCuts(bestLayout.CutLines, sheet.BladeWidth);
+            bestLayout.CutLines = mergedCuts;
+            bestLayout.CutCount = mergedCuts.Count;
+
+            return bestLayout;
+        }
+
+        private static SheetLayout RunGuillotineSimulation(
+            Sheet sheet,
+            List<Detail> sortedDetails,
+            int sheetNumber,
+            double trimL, double trimR, double trimB, double trimT,
+            double usableWidth, double usableLength,
+            FreeRectChoiceHeuristic rectChoice,
+            GuillotineSplitHeuristic splitRule,
+            List<CutLine> trimCutLines)
+        {
+            var layout = new SheetLayout { Sheet = sheet };
+            var freeRects = new List<Rect> { new Rect(trimL, trimB, usableWidth, usableLength) };
+            var cuts = new List<CutLine>(trimCutLines);
+            int currentStage = 1;
+
+            foreach (var detail in sortedDetails)
+            {
+                int bestRectIndex = -1;
+                double bestScore1 = double.MaxValue;
+                double bestScore2 = double.MaxValue;
+                bool bestRotated = false;
+                double placedW = 0;
+                double placedH = 0;
+
+                for (int i = 0; i < freeRects.Count; i++)
+                {
+                    var r = freeRects[i];
+
+                    // Вариант без поворота
+                    if (detail.Width <= r.Width && detail.Length <= r.Height)
+                    {
+                        ScorePlacement(r, detail.Width, detail.Length, rectChoice, out double s1, out double s2);
+                        if (s1 < bestScore1 || (Math.Abs(s1 - bestScore1) < 0.001 && s2 < bestScore2))
+                        {
+                            bestScore1 = s1;
+                            bestScore2 = s2;
+                            bestRectIndex = i;
+                            bestRotated = false;
+                            placedW = detail.Width;
+                            placedH = detail.Length;
+                        }
+                    }
+
+                    // Вариант с поворотом
+                    if (sheet.CanRotateParts && detail.CanRotate && detail.Length <= r.Width && detail.Width <= r.Height)
+                    {
+                        ScorePlacement(r, detail.Length, detail.Width, rectChoice, out double s1, out double s2);
+                        if (s1 < bestScore1 || (Math.Abs(s1 - bestScore1) < 0.001 && s2 < bestScore2))
+                        {
+                            bestScore1 = s1;
+                            bestScore2 = s2;
+                            bestRectIndex = i;
+                            bestRotated = true;
+                            placedW = detail.Length;
+                            placedH = detail.Width;
+                        }
+                    }
+                }
+
+                if (bestRectIndex < 0) continue;
+
+                var targetRect = freeRects[bestRectIndex];
+                freeRects.RemoveAt(bestRectIndex);
+
+                layout.Details.Add(new CutDetail
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    DetailId = detail.Id,
+                    Name = detail.Name,
+                    Width = Math.Round(placedW, 2),
+                    Length = Math.Round(placedH, 2),
+                    X = Math.Round(targetRect.X, 2),
+                    Y = Math.Round(targetRect.Y, 2),
+                    Rotated = bestRotated,
+                    SheetId = sheet.Id,
+                    SheetNumber = sheetNumber
+                });
+
+                SplitFreeRectGuillotine(
+                    targetRect, placedW, placedH, sheet.BladeWidth,
+                    splitRule, freeRects, cuts, currentStage++,
+                    sheet.Width, sheet.Length);
+            }
+
+            layout.CutLines = cuts;
+            double sheetArea = sheet.Width * sheet.Length;
+            double totalUsedArea = layout.Details.Sum(d => d.Width * d.Length);
+            layout.MaterialUsage = sheetArea > 0 ? (totalUsedArea / sheetArea) : 0;
+            layout.WastePercentage = 100.0 - (layout.MaterialUsage * 100.0);
+
+            return layout;
+        }
+
+        private static void ScorePlacement(
+            Rect r, double w, double h,
+            FreeRectChoiceHeuristic heuristic,
+            out double score1, out double score2)
+        {
+            double remW = r.Width - w;
+            double remH = r.Height - h;
+
+            switch (heuristic)
+            {
+                case FreeRectChoiceHeuristic.BestAreaFit:
+                    score1 = r.Width * r.Height - w * h;
+                    score2 = Math.Min(remW, remH);
+                    break;
+                case FreeRectChoiceHeuristic.BestShortSideFit:
+                    score1 = Math.Min(remW, remH);
+                    score2 = Math.Max(remW, remH);
+                    break;
+                case FreeRectChoiceHeuristic.BestLongSideFit:
+                    score1 = Math.Max(remW, remH);
+                    score2 = Math.Min(remW, remH);
+                    break;
+                default:
+                    score1 = remW * remH;
+                    score2 = 0;
+                    break;
+            }
+        }
+
+        private static void SplitFreeRectGuillotine(
+            Rect target, double placedW, double placedH, double blade,
+            GuillotineSplitHeuristic splitRule,
+            List<Rect> freeRects, List<CutLine> cuts, int stage,
+            double sheetWidth, double sheetLength)
+        {
+            double remW = target.Width - placedW;
+            double remH = target.Height - placedH;
+            const double eps = 0.05;
+
+            bool splitHorizontal = splitRule switch
+            {
+                GuillotineSplitHeuristic.ShorterLeftoverAxis => remW <= remH,
+                GuillotineSplitHeuristic.LongerLeftoverAxis => remW > remH,
+                GuillotineSplitHeuristic.MaximizeArea => (target.Width * remH) >= (remW * target.Height),
+                _ => remW <= remH
+            };
+
+            if (splitHorizontal)
+            {
+                if (remH > eps && (target.Y + placedH < sheetLength - eps))
+                {
+                    cuts.Add(new CutLine
+                    {
+                        X1 = Math.Round(target.X, 2),
+                        Y1 = Math.Round(target.Y + placedH, 2),
+                        X2 = Math.Round(target.X + target.Width, 2),
+                        Y2 = Math.Round(target.Y + placedH, 2),
+                        Type = "horizontal",
+                        Stage = stage,
+                        IsVisible = true,
+                        IsCut = false
+                    });
+
+                    double topY = target.Y + placedH + blade;
+                    double topH = target.Height - placedH - blade;
+                    if (topH > eps)
+                    {
+                        freeRects.Add(new Rect(target.X, topY, target.Width, topH));
+                    }
+                }
+
+                if (remW > eps && (target.X + placedW < sheetWidth - eps))
+                {
+                    cuts.Add(new CutLine
+                    {
+                        X1 = Math.Round(target.X + placedW, 2),
+                        Y1 = Math.Round(target.Y, 2),
+                        X2 = Math.Round(target.X + placedW, 2),
+                        Y2 = Math.Round(target.Y + placedH, 2),
+                        Type = "vertical",
+                        Stage = stage + 1,
+                        IsVisible = true,
+                        IsCut = false
+                    });
+
+                    double rightX = target.X + placedW + blade;
+                    double rightW = target.Width - placedW - blade;
+                    if (rightW > eps)
+                    {
+                        freeRects.Add(new Rect(rightX, target.Y, rightW, placedH));
+                    }
+                }
+            }
+            else
+            {
+                if (remW > eps && (target.X + placedW < sheetWidth - eps))
+                {
+                    cuts.Add(new CutLine
+                    {
+                        X1 = Math.Round(target.X + placedW, 2),
+                        Y1 = Math.Round(target.Y, 2),
+                        X2 = Math.Round(target.X + placedW, 2),
+                        Y2 = Math.Round(target.Y + target.Height, 2),
+                        Type = "vertical",
+                        Stage = stage,
+                        IsVisible = true,
+                        IsCut = false
+                    });
+
+                    double rightX = target.X + placedW + blade;
+                    double rightW = target.Width - placedW - blade;
+                    if (rightW > eps)
+                    {
+                        freeRects.Add(new Rect(rightX, target.Y, rightW, target.Height));
+                    }
+                }
+
+                if (remH > eps && (target.Y + placedH < sheetLength - eps))
+                {
+                    cuts.Add(new CutLine
+                    {
+                        X1 = Math.Round(target.X, 2),
+                        Y1 = Math.Round(target.Y + placedH, 2),
+                        X2 = Math.Round(target.X + placedW, 2),
+                        Y2 = Math.Round(target.Y + placedH, 2),
+                        Type = "horizontal",
+                        Stage = stage + 1,
+                        IsVisible = true,
+                        IsCut = false
+                    });
+
+                    double topY = target.Y + placedH + blade;
+                    double topH = target.Height - placedH - blade;
+                    if (topH > eps)
+                    {
+                        freeRects.Add(new Rect(target.X, topY, placedW, topH));
+                    }
+                }
+            }
+        }
+
+        private static List<CutLine> MergeCollinearCuts(List<CutLine> rawCuts, double bladeWidth, double maxTolerance = 0.5)
+        {
+            if (rawCuts.Count <= 1) return rawCuts;
+
+            var merged = new List<CutLine>();
+
+            // 1. Слияние горизонтальных резов
+            var horizontalGroups = rawCuts
+                .Where(c => c.Type.Equals("horizontal", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(c => Math.Round(c.Y1, 1));
+
+            foreach (var group in horizontalGroups)
+            {
+                var segments = group.OrderBy(c => c.X1).ToList();
+                var current = segments[0];
+
+                for (int i = 1; i < segments.Count; i++)
+                {
+                    var next = segments[i];
+
+                    // Проверка стыковки или перекрытия с учетом толщины пилы
+                    if (next.X1 <= current.X2 + bladeWidth + maxTolerance)
+                    {
+                        current.X2 = Math.Max(current.X2, next.X2);
+                        current.Stage = Math.Min(current.Stage, next.Stage);
+                    }
+                    else
+                    {
+                        merged.Add(current);
+                        current = next;
+                    }
+                }
+                merged.Add(current);
+            }
+
+            // 2. Слияние вертикальных резов
+            var verticalGroups = rawCuts
+                .Where(c => c.Type.Equals("vertical", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(c => Math.Round(c.X1, 1));
+
+            foreach (var group in verticalGroups)
+            {
+                var segments = group.OrderBy(c => c.Y1).ToList();
+                var current = segments[0];
+
+                for (int i = 1; i < segments.Count; i++)
+                {
+                    var next = segments[i];
+
+                    if (next.Y1 <= current.Y2 + bladeWidth + maxTolerance)
+                    {
+                        current.Y2 = Math.Max(current.Y2, next.Y2);
+                        current.Stage = Math.Min(current.Stage, next.Stage);
+                    }
+                    else
+                    {
+                        merged.Add(current);
+                        current = next;
+                    }
+                }
+                merged.Add(current);
+            }
+
+            return merged
+                .OrderBy(c => c.Stage)
+                .ThenBy(c => c.Type == "vertical" ? c.X1 : c.Y1)
+                .ToList();
+        }
+
+        private static List<CutLine> GenerateTrimmingCuts(
+            Sheet sheet, TrimmingSettings trimming,
+            double trimL, double trimR, double trimB, double trimT)
+        {
+            var trimLines = new List<CutLine>();
+
+            // Теперь рисуем линию отступа, если сам рассчитанный отступ > 0.
+            // Это гарантирует корректную визуализацию новых асимметричных полей.
+            if (trimL > 0)
+            {
+                trimLines.Add(new CutLine
+                {
+                    X1 = Math.Round(trimL, 2),
+                    Y1 = 0,
+                    X2 = Math.Round(trimL, 2),
+                    Y2 = sheet.Length,
+                    Type = "vertical",
+                    Stage = 0,
+                    IsVisible = true,
+                    IsCut = false // Это граница, а не рез детали
+                });
+            }
+
+            if (trimR > 0)
+            {
+                trimLines.Add(new CutLine
+                {
+                    X1 = Math.Round(sheet.Width - trimR, 2),
+                    Y1 = 0,
+                    X2 = Math.Round(sheet.Width - trimR, 2),
+                    Y2 = sheet.Length,
+                    Type = "vertical",
+                    Stage = 0,
+                    IsVisible = true,
+                    IsCut = false
+                });
+            }
+
+            if (trimB > 0)
+            {
+                trimLines.Add(new CutLine
+                {
+                    X1 = 0,
+                    Y1 = Math.Round(trimB, 2),
+                    X2 = sheet.Width,
+                    Y2 = Math.Round(trimB, 2),
+                    Type = "horizontal",
+                    Stage = 0,
+                    IsVisible = true,
+                    IsCut = false
+                });
+            }
+
+            if (trimT > 0)
+            {
+                trimLines.Add(new CutLine
+                {
+                    X1 = 0,
+                    Y1 = Math.Round(sheet.Length - trimT, 2),
+                    X2 = sheet.Width,
+                    Y2 = Math.Round(sheet.Length - trimT, 2),
+                    Type = "horizontal",
+                    Stage = 0,
+                    IsVisible = true,
+                    IsCut = false
+                });
+            }
+
+            return trimLines;
+        }
+
+        private static List<Detail> ExpandDetails(List<Detail> details) =>
+            details.SelectMany(d => Enumerable.Range(0, d.Quantity).Select(_ => new Detail
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = d.Name,
+                Length = d.Length,
+                Width = d.Width,
+                CanRotate = d.CanRotate,
+                Quantity = 1
+            })).ToList();
+
+        private static void CalculateTotals(CuttingPlan plan)
+        {
+            double totalSheetArea = plan.SheetLayouts.Sum(sl => sl.Sheet.Width * sl.Sheet.Length);
+            double totalUsedArea = plan.SheetLayouts.Sum(sl => sl.Details.Sum(d => d.Width * d.Length));
+
+            if (totalSheetArea > 0)
+            {
+                plan.TotalMaterialUsage = totalUsedArea / totalSheetArea;
+                plan.TotalWastePercentage = 100.0 - (plan.TotalMaterialUsage * 100.0);
+            }
+        }
     }
+
+
+
 }

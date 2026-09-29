@@ -2,22 +2,23 @@
 @attribute [Authorize(Roles = "User, AdminSuper")]
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Newtonsoft.Json
-@using Cutter.Data
+@using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
-@using static Cutter.Data.DBModels
-@inject ApplicationDbContext DbContext
+@using Cutter.Services
+@inject CuttingService CuttingService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Моя смена</PageTitle>
 
 <div class="container mt-4">
-
     <div class="mb-4">
         <a href="/cut" class="btn btn-primary btn-lg shadow-sm">✂️ Новый распил</a>
     </div>
-    <h2 class="mb-4">Моя смена — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+
+    <!-- Заголовок меняется в зависимости от роли -->
+    <h2 class="mb-4">
+        @(isAdminSuper ? "Смена всех сотрудников" : "Моя смена") — @DateTime.Today.ToString("dd.MM.yyyy")
+    </h2>
 
     @if (isLoading)
     {
@@ -27,14 +28,14 @@
             </div>
         </div>
     }
-    else
+    else if (dashboard != null)
     {
         <div class="row g-4 mb-5">
             <div class="col-md-4">
                 <div class="card text-white bg-primary">
                     <div class="card-body text-center">
-                        <h5 class="card-title">Распиловок</h5>
-                        <h2 class="display-4">@stats.CuttingPlansCount</h2>
+                        <h5 class="card-title">Бланков</h5>
+                        <h2 class="display-4">@dashboard.CuttingPlansCount</h2>
                     </div>
                 </div>
             </div>
@@ -42,41 +43,63 @@
                 <div class="card text-white bg-success">
                     <div class="card-body text-center">
                         <h5 class="card-title">Резов</h5>
-                        <h2 class="display-4">@stats.TotalCuts</h2>
+                        <h2 class="display-4">@dashboard.TotalCuts</h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card text-white bg-info">
                     <div class="card-body text-center">
-                        <h5 class="card-title">Сумма резов</h5>
-                        <h2 class="display-4">@stats.TotalAmount.ToString("N0") ₽</h2>
+                        <h5 class="card-title">Сумма услуг</h5>
+                        <h2 class="display-4">@dashboard.TotalServicesAmount.ToString("N0") ₽</h2>
                     </div>
                 </div>
             </div>
+            @*<div class="col-md-3">
+                <div class="card text-white bg-warning">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Итого</h5>
+                        <h2 class="display-4">@dashboard.TotalAmount.ToString("N0") ₽</h2>
+                    </div>
+                </div>
+            </div>*@
         </div>
 
-        <h4>Сегодняшние распиловки</h4>
-        @if (todayCuttings.Any())
+        <h4>Сегодняшние бланки</h4>
+        @if (dashboard.TodayCuttings.Any())
         {
             <div class="list-group">
-                @foreach (var dbPlan in todayCuttings)
+                @foreach (var item in dashboard.TodayCuttings)
                 {
-                    var (cuts, amount) = CalculateStats(dbPlan.CuttingPlan);
-                    <a href="/cutting-plan/@dbPlan.GUUID"
+                    <a href="/cut/@item.GUUID"
                        class="list-group-item list-group-item-action rounded-2 mb-2"
                        style="transition: background-color 0.15s ease; text-decoration: none;"
                        onmouseover="this.style.backgroundColor='#f0f8ff'"
                        onmouseout="this.style.backgroundColor=''">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <strong>Распиловка @dbPlan.NumCut</strong>
+                                <strong>Бланк №@item.ShiftNumber</strong>
+                                <small class="text-muted ms-1">(@item.NumCut)</small>
+
+                                <!-- Показываем имя сотрудника ТОЛЬКО если это админ -->
+                                @if (isAdminSuper && !string.IsNullOrEmpty(item.UserName))
+                                {
+                                    <span class="badge bg-secondary ms-2">👤 @item.UserName</span>
+                                }
+
+                                @if (!string.IsNullOrEmpty(item.Invoice))
+                                {
+                                    <span class="badge bg-light text-dark ms-2">Договор №@item.Invoice</span>
+                                }
                                 <br />
                                 <small class="text-muted">
-                                    Резов: @cuts, Сумма: @amount.ToString("N0") ₽
+                                    Резов: @item.TotalCuts |
+                                    Сумма: @item.TotalServicesAmount.ToString("N0") ₽ @*|
+                                    Листы: @item.TotalSheetsAmount.ToString("N0") ₽ |
+                                    <strong>Итого: @item.TotalAmount.ToString("N0") ₽</strong>*@
                                 </small>
                             </div>
-                            <span class="badge bg-secondary align-self-center">@dbPlan.CreateDate.ToString("HH:mm")</span>
+                            <span class="badge bg-secondary align-self-center">@item.CreateDate.ToString("HH:mm")</span>
                         </div>
                     </a>
                 }
@@ -85,7 +108,7 @@
         else
         {
             <div class="alert alert-info">
-                Сегодня ещё не создано ни одной распиловки.
+                @(isAdminSuper ? "Сегодня сотрудники ещё не создали ни одной распиловки." : "Сегодня вы ещё не создали ни одной распиловки.")
             </div>
         }
     }
@@ -93,100 +116,25 @@
 
 @code {
     private bool isLoading = true;
-    private string? currentUserId;
-    private List<CutPlan> todayCuttings = new();
-    private CuttingStats stats = new();
+    private bool isAdminSuper = false; // <-- Новый флаг
+    private UserDashboardDto? dashboard;
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
-        if (user.Identity.IsAuthenticated)
+
+        if (user.Identity?.IsAuthenticated == true)
         {
-            currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            // Проверяем роль админа
+            isAdminSuper = user.IsInRole("AdminSuper");
+
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            // Передаем userId и флаг isAdminSuper в сервис
+            dashboard = await CuttingService.GetUserDashboardAsync(userId, isAdminSuper);
         }
-
-        if (!string.IsNullOrEmpty(currentUserId))
-        {
-            await LoadData();
-        }
-    }
-
-    private async Task LoadData()
-    {
-        isLoading = true;
-        StateHasChanged();
-
-        var today = DateTime.Today;
-
-        todayCuttings = await DbContext.CutPlan
-            .Where(cp => cp.UserId == currentUserId &&
-                         cp.CreateDate.Date == today &&
-                         cp.IsSave)
-            .OrderByDescending(cp => cp.CreateDate)
-            .ToListAsync();
-
-        int totalCuts = 0;
-        decimal totalAmount = 0;
-
-        foreach (var dbPlan in todayCuttings)
-        {
-            var (cuts, amount) = CalculateStats(dbPlan.CuttingPlan);
-            totalCuts += cuts;
-            totalAmount += amount;
-        }
-
-        stats = new CuttingStats
-            {
-                CuttingPlansCount = todayCuttings.Count,
-                TotalCuts = totalCuts,
-                TotalAmount = totalAmount
-            };
 
         isLoading = false;
-        StateHasChanged();
-    }
-
-    private (int cuts, decimal amount) CalculateStats(string? json)
-    {
-        if (string.IsNullOrEmpty(json))
-            return (0, 0);
-
-        try
-        {
-            var plans = JsonConvert.DeserializeObject<List<CuttingPlan>>(json);
-            if (plans == null)
-                return (0, 0);
-
-            int totalCuts = 0;
-            decimal totalAmount = 0;
-
-            foreach (var plan in plans)
-            {
-                foreach (var layout in plan.SheetLayouts)
-                {
-                    // Количество выполненных резов на листе
-                    //var cutCount = layout.CutLines.Count(cl => cl.IsCut);
-                    var cutCount = layout.CutLines.Count();
-                    totalCuts += cutCount;
-
-                    // Сумма = количество резов * цена реза за лист
-                    totalAmount += (decimal)(cutCount * layout.Sheet.CutPrice);
-                }
-            }
-
-            return (totalCuts, totalAmount);
-        }
-        catch
-        {
-            return (0, 0);
-        }
-    }
-
-    private class CuttingStats
-    {
-        public int CuttingPlansCount { get; set; }
-        public int TotalCuts { get; set; }
-        public decimal TotalAmount { get; set; }
     }
 }

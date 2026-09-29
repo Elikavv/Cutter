@@ -249,8 +249,9 @@
                                     <thead class="table-light">
                                         <tr>
                                             <th style="width: 5%">Тип</th>
-                                            <th style="width: 30%">Услуга</th>
-                                            <th style="width: 45%">Описание</th>
+                                            <th style="width: 25%">Услуга</th>
+                                            <th style="width: 20%">Код услуги</th>
+                                            <th style="width: 30%">Описание</th>
                                             <th style="width: 15%">Цена (₽)</th>
                                             <th style="width: 5%"></th>
                                         </tr>
@@ -270,6 +271,13 @@
                                                     }
                                                 </td>
                                                 <td class="align-middle"><strong>@price.ServiceName</strong></td>
+                                                <td class="align-middle">
+                                                    <input type="text"
+                                                           class="form-control form-control-sm"
+                                                           @bind="price.ServiceCode"
+                                                           @bind:event="oninput"
+                                                           placeholder="Артикул" />
+                                                </td>
                                                 <td class="align-middle text-muted small">@price.Description</td>
                                                 <td class="align-middle">
                                                     <div class="input-group">
@@ -464,6 +472,11 @@
                             }
                         </div>
                         <div class="mb-3">
+                            <label class="form-label">Код услуги (артикул)</label>
+                            <input type="text" class="form-control" @bind="newServiceCode" placeholder="Например: CUT001" />
+                            <small class="text-muted">Уникальный код услуги для этого магазина</small>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label">Цена (₽) *</label>
                             <input type="number" class="form-control" @bind="newServicePrice" step="0.01" min="0" />
                         </div>
@@ -509,6 +522,7 @@
     private bool showAddServiceModal = false;
     private int selectedServiceId = 0;
     private float newServicePrice = 0;
+    private string? newServiceCode = null;
     private List<AvailableServiceDto> availableServices = new();
 
     [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
@@ -571,7 +585,7 @@
             {
                 if (price.Id.HasValue)
                 {
-                    await PricingService.UpdateServicePriceAsync(price.Id.Value, price.Price);
+                    await PricingService.UpdateServicePriceAsync(price.Id.Value, price.Price, price.ServiceCode);
                 }
             }
         }
@@ -647,6 +661,7 @@
     {
         selectedServiceId = 0;
         newServicePrice = 0;
+        newServiceCode = null;
         availableServices = await PricingService.GetAvailableServicesForStoreAsync(selectedStoreId);
         showAddServiceModal = true;
     }
@@ -660,7 +675,7 @@
     {
         if (selectedServiceId == 0 || newServicePrice <= 0) return;
 
-        await PricingService.AddServiceToStoreAsync(selectedStoreId, selectedServiceId, newServicePrice);
+        await PricingService.AddServiceToStoreAsync(selectedStoreId, selectedServiceId, newServicePrice, newServiceCode);
         CloseAddServiceModal();
         await LoadPrices();
     }

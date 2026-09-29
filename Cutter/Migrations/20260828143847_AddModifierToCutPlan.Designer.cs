@@ -3,6 +3,7 @@ using System;
 using Cutter.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Cutter.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260828143847_AddModifierToCutPlan")]
+    partial class AddModifierToCutPlan
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -97,56 +100,6 @@ namespace Cutter.Migrations
                     b.HasIndex("StoreId");
 
                     b.ToTable("AspNetUsers", (string)null);
-                });
-
-            modelBuilder.Entity("Cutter.Data.CuttingConstraintProfile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("BladeWidth")
-                        .HasColumnType("double precision");
-
-                    b.Property<bool>("CanRotateParts")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("boolean");
-
-                    b.Property<double>("MarginBottom")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("MarginLeft")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("MarginRight")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("MarginTop")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("MaxCutLength")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("MinDistanceBetweenParts")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("StoreId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StoreId");
-
-                    b.ToTable("CuttingConstraintProfiles");
                 });
 
             modelBuilder.Entity("Cutter.Data.CuttingServiceModel", b =>
@@ -599,17 +552,6 @@ namespace Cutter.Migrations
                         .WithMany()
                         .HasForeignKey("StoreId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Store");
-                });
-
-            modelBuilder.Entity("Cutter.Data.CuttingConstraintProfile", b =>
-                {
-                    b.HasOne("Cutter.Data.Store", "Store")
-                        .WithMany()
-                        .HasForeignKey("StoreId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Store");

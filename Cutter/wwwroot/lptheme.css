@@ -1,14 +1,19 @@
 ﻿/* =============================================
-   🎨 ТЕМА ЛЕМАН ПРО — ОФИЦИАЛЬНАЯ ПАЛИТРА
+    ТЕМА ЛЕМАН ПРО — ЧИТАЕМАЯ ВЕРСИЯ
    ============================================= */
 
 :root {
-    --lp-yellow: #FED500; /* Основной акцент — жёлтый */
-    --lp-graphite: #222222; /* Основной текст — графит */
-    --lp-white: #FFFFFF; /* Фон */
-    --lp-light-gray: #F5F5F5; /* Подложки, разделители */
-    --lp-orange: #FF8C00; /* Вторичный акцент — оранжевый */
-    --lp-border: #E0E0E0; /* Границы */
+    --lp-yellow: #FED500; /* Акцентный жёлтый (только как ФОН) */
+    --lp-yellow-dark: #E6C000; /* Тёмно-жёлтый для ховера */
+    --lp-graphite: #222222; /* Основной текст */
+    --lp-graphite-light: #444444; /* Вторичный текст */
+    --lp-white: #FFFFFF;
+    --lp-light-gray: #F5F5F5;
+    --lp-border: #D0D0D0; /* Видимые границы */
+    --lp-blue: #0055A4; /* Для ссылок и фокуса (читается на белом!) */
+    --lp-orange: #FF8C00;
+    --lp-success: #2E7D32;
+    --lp-danger: #C62828;
 }
 
 /* Общие стили */
@@ -20,106 +25,216 @@ html, body {
     padding: 0;
 }
 
+/* ССЫЛКИ — тёмно-синие, читаемые на белом */
 a, .btn-link {
-    color: var(--lp-yellow);
+    color: var(--lp-blue);
     text-decoration: none;
     font-weight: 500;
 }
 
     a:hover, .btn-link:hover {
-        color: var(--lp-orange);
+        color: var(--lp-graphite);
         text-decoration: underline;
     }
 
-/* Кнопки */
+/* =============================================
+    КНОПКИ
+   ============================================= */
+
+/* Primary — жёлтый фон + графитовый текст (как у Lemana Pro) */
 .btn-primary {
     color: var(--lp-graphite);
     background-color: var(--lp-yellow);
-    border-color: #E6C000;
+    border-color: var(--lp-yellow-dark);
     font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
     .btn-primary:hover, .btn-primary:focus, .btn-primary:active {
-        background-color: #E6C000;
+        background-color: var(--lp-yellow-dark);
         border-color: #D9B000;
         color: var(--lp-graphite);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     }
 
+/* Outline — графитовая рамка + графитовый текст, жёлтый при ховере */
 .btn-outline-primary {
-    color: var(--lp-yellow);
-    border-color: var(--lp-yellow);
+    color: var(--lp-graphite);
+    border-color: var(--lp-graphite);
+    background-color: transparent;
+    font-weight: 600;
 }
 
     .btn-outline-primary:hover {
         background-color: var(--lp-yellow);
+        border-color: var(--lp-yellow-dark);
         color: var(--lp-graphite);
     }
 
-.btn-warning {
+/* Secondary — светло-серый */
+.btn-secondary {
+    background-color: var(--lp-light-gray);
+    border-color: var(--lp-border);
     color: var(--lp-graphite);
+}
+
+    .btn-secondary:hover {
+        background-color: #E0E0E0;
+        border-color: #B0B0B0;
+    }
+
+/* Success — зелёный */
+.btn-success {
+    background-color: var(--lp-success);
+    border-color: #1B5E20;
+    color: var(--lp-white);
+}
+
+    .btn-success:hover {
+        background-color: #1B5E20;
+        border-color: #1B5E20;
+    }
+
+/* Warning — оранжевый */
+.btn-warning {
     background-color: var(--lp-orange);
     border-color: #E67E00;
+    color: var(--lp-white);
+    font-weight: 600;
 }
 
     .btn-warning:hover {
         background-color: #E67E00;
         border-color: #CC7000;
+        color: var(--lp-white);
     }
 
-/* Фокус-состояния */
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-    box-shadow: 0 0 0 0.1rem var(--lp-white), 0 0 0 0.25rem var(--lp-yellow);
+/* Danger — красный */
+.btn-danger {
+    background-color: var(--lp-danger);
+    border-color: #8E0000;
+    color: var(--lp-white);
 }
 
-/* Заголовки */
-h1, h2, h3, h4, h5, h6 {
+    .btn-danger:hover {
+        background-color: #8E0000;
+        border-color: #8E0000;
+    }
+
+/* Фокус — СИНЕЕ свечение (читается на любом фоне) */
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus,
+.form-control:focus, .form-check-input:focus, .form-select:focus {
+    box-shadow: 0 0 0 0.1rem var(--lp-white), 0 0 0 0.25rem var(--lp-blue);
+    outline: none;
+}
+
+/* =============================================
+   📋 ТАБЛИЦЫ
+   ============================================= */
+
+.table {
     color: var(--lp-graphite);
-    font-weight: 700;
+    border-color: var(--lp-border);
 }
 
-.content {
-    padding-top: 1.1rem;
-}
-
-.main-container {
-    padding-top: 3.5rem; /* Высота фиксированного хедера */
-    transition: margin-left 0.3s ease;
-}
-
-/* На десктопе — учитываем ширину сайдбара */
-/*@media (min-width: 992px) {
-    .main-container {
-        margin-left: 250px; 
+    .table th {
+        font-weight: 600;
+        color: var(--lp-graphite);
+        background-color: var(--lp-light-gray);
+        border-bottom: 2px solid var(--lp-graphite);
     }
-}*/
 
-/* Если нужно — добавьте нижний отступ, чтобы контент не прилипал ко дну */
-.main-container {
-    padding-bottom: 2rem;
+.table-hover tbody tr:hover {
+    background-color: #FFF9E6 !important; /* Лёгкий жёлтый при наведении */
 }
 
-/* Валидация */
-.valid.modified:not([type=checkbox]) {
-    outline: 2px solid #28a745;
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0,0,0,0.02);
 }
 
-.invalid {
-    outline: 2px solid #dc3545;
+/* Специальный стиль таблицы Lemana Pro */
+.table-lemanapro {
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
-.validation-message {
-    color: #dc3545;
+    .table-lemanapro thead th {
+        background-color: var(--lp-graphite) !important;
+        color: var(--lp-white) !important;
+        font-weight: 600;
+        padding: 12px 16px;
+        border-bottom: 3px solid var(--lp-yellow);
+    }
+
+        .table-lemanapro thead th:hover {
+            background-color: #1a1a1a !important;
+            color: var(--lp-yellow) !important;
+        }
+
+    .table-lemanapro tbody td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--lp-border);
+        vertical-align: middle;
+    }
+
+    .table-lemanapro tbody tr:hover td {
+        background-color: #FFF9E6 !important;
+    }
+
+    .table-lemanapro tbody tr:nth-child(even) td {
+        background-color: #FAFAFA !important;
+    }
+
+    .table-lemanapro tfoot th,
+    .table-lemanapro tfoot td {
+        background-color: var(--lp-yellow) !important;
+        color: var(--lp-graphite) !important;
+        font-weight: 700;
+        padding: 12px 16px;
+        border-top: 2px solid var(--lp-graphite);
+    }
+
+/* =============================================
+   📝 ФОРМЫ
+   ============================================= */
+
+.form-control, .form-select {
+    border: 1px solid var(--lp-border);
+    color: var(--lp-graphite);
+    background-color: var(--lp-white);
 }
 
-/* Чекбоксы */
-.darker-border-checkbox.form-check-input {
-    border-color: #999;
+    .form-control:focus, .form-select:focus {
+        border-color: var(--lp-blue);
+        box-shadow: 0 0 0 0.2rem rgba(0, 85, 164, 0.15);
+    }
+
+.form-label {
+    color: var(--lp-graphite);
+    font-weight: 500;
+    margin-bottom: 0.25rem;
 }
 
-/* Плавающие формы */
+.form-check-input {
+    border-color: var(--lp-border);
+}
+
+    .form-check-input:checked {
+        background-color: var(--lp-yellow);
+        border-color: var(--lp-yellow-dark);
+    }
+
+    .form-check-input:focus {
+        box-shadow: 0 0 0 0.2rem rgba(0, 85, 164, 0.15);
+        border-color: var(--lp-blue);
+    }
+
 .form-floating > .form-control-plaintext::placeholder,
 .form-floating > .form-control::placeholder {
-    color: #666;
+    color: #888;
     text-align: end;
 }
 
@@ -128,11 +243,39 @@ h1, h2, h3, h4, h5, h6 {
     text-align: start;
 }
 
-/* Ошибки Blazor */
+/* =============================================
+   ✅ ВАЛИДАЦИЯ
+   ============================================= */
+
+.valid.modified:not([type=checkbox]) {
+    outline: 2px solid var(--lp-success);
+    border-color: var(--lp-success);
+}
+
+.invalid {
+    outline: 2px solid var(--lp-danger);
+    border-color: var(--lp-danger);
+}
+
+.validation-message {
+    color: var(--lp-danger);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.darker-border-checkbox.form-check-input {
+    border-color: #999;
+}
+
+/* =============================================
+   🚨 ОШИБКИ BLAZOR
+   ============================================= */
+
 .blazor-error-boundary {
-    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, var(--lp-yellow);
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, var(--lp-danger);
     padding: 1rem 1rem 1rem 3.7rem;
-    color: var(--lp-graphite);
+    color: var(--lp-white);
+    border-radius: 4px;
     font-weight: bold;
 }
 
@@ -156,222 +299,157 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 1.2rem;
 }
 
-.navbar-brand:hover {
-    color: var(--lp-orange) !important;
-}
+    .navbar-brand:hover {
+        color: var(--lp-white) !important;
+    }
 
 .nav-link {
-    color: rgba(255, 255, 255, 0.85) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
     font-weight: 500;
 }
 
     .nav-link:hover, .nav-link.active {
         color: var(--lp-yellow) !important;
-        background-color: rgba(255, 213, 0, 0.1);
-    }
-
-    .nav-link i {
-        margin-right: 0.5rem;
-        width: 1.2em;
-        text-align: center;
+        background-color: rgba(254, 213, 0, 0.1);
     }
 
 /* =============================================
-   📋 ТАБЛИЦЫ
+   🎯 КАРТОЧКИ
    ============================================= */
 
-.table {
-    --bs-table-bg: var(--lp-white);
-    /*--bs-table-accent-bg: var(--lp-light-gray);*/
-    --bs-table-striped-bg: var(--lp-light-gray);
-    --bs-table-hover-bg: #EAEAEA;
-    color: var(--lp-graphite);
-}
-
-    .table th {
-        font-weight: 600;
-        color: var(--lp-graphite);
-    }
-
-.table-dark {
-    --bs-table-bg: var(--lp-graphite);
-    --bs-table-color: var(--lp-white);
-    --bs-table-striped-bg: #333333;
-    --bs-table-hover-bg: #444444;
-}
-
-/* =============================================
-   📄 ФОРМЫ
-   ============================================= */
-
-.form-control {
-    border-color: var(--lp-border);
-}
-
-    .form-control:focus {
-        border-color: var(--lp-yellow);
-        box-shadow: 0 0 0 0.25rem rgba(254, 213, 0, 0.25);
-    }
-
-.form-check-input:checked {
-    background-color: var(--lp-yellow);
-    border-color: var(--lp-yellow);
-}
-
-.form-check-input:focus {
-    box-shadow: 0 0 0 0.25rem rgba(254, 213, 0, 0.25);
-}
-
-.form-select:focus {
-    border-color: var(--lp-yellow);
-    box-shadow: 0 0 0 0.25rem rgba(254, 213, 0, 0.25);
-}
-
-/* =============================================
-   🎯 КНОПКИ — ДОПОЛНИТЕЛЬНЫЕ
-   ============================================= */
-
-.btn-secondary {
-    background-color: var(--lp-light-gray);
-    border-color: #D0D0D0;
-    color: var(--lp-graphite);
-}
-
-    .btn-secondary:hover {
-        background-color: #E0E0E0;
-        border-color: #C0C0C0;
-    }
-
-.btn-danger {
-    background-color: #dc3545;
-    border-color: #c82333;
-    color: white;
-}
-
-.btn-danger:hover {
-    background-color: #c82333;
-    border-color: #bd2130;
-}
-
-/* Основной стиль таблицы */
-.table-lemanapro {
-    --bs-table-bg: #ffffff;
-    /*--bs-table-accent-bg: #f8f9fa;*/
-    --bs-table-striped-bg: #fafafa;
-    --bs-table-hover-bg: #f0f4ff;
-    --bs-table-color: var(--lp-graphite);
-    --bs-table-border-color: var(--lp-border);
-    border-spacing: 0;
-    border-collapse: separate;
+.card {
+    border: 1px solid var(--lp-border);
     border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
-    /* Заголовок таблицы */
-    .table-lemanapro thead th {
-        background-color: var(--lp-graphite) !important;
-        color: var(--lp-white) !important;
-        font-weight: 600;
-        /*text-align: center;*/
-        padding: 12px 16px;
-        border-bottom: 2px solid var(--lp-yellow);
-        position: relative;
-        transition: all 0.3s ease;
-    }
-
-        .table-lemanapro thead th:hover {
-            background-color: #1a1a1a !important;
-            color: var(--lp-yellow) !important;
-        }
-
-        .table-lemanapro thead th::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 50%;
-            width: 0;
-            height: 2px;
-            background-color: var(--lp-yellow);
-            transition: width 0.3s ease, left 0.3s ease;
-            transform: translateX(-50%);
-        }
-
-        .table-lemanapro thead th:hover::after,
-        .table-lemanapro thead th.sort-active::after {
-            width: 100%;
-        }
-
-    /* Ячейки тела таблицы */
-    .table-lemanapro tbody td {
-        padding: 12px 16px;
-        vertical-align: middle;
-        border-bottom: 1px solid var(--lp-border);
-        transition: background-color 0.2s ease;
-    }
-
-    .table-lemanapro tbody tr:hover td {
-        background-color: #fff9e6 !important; /* Светло-жёлтый при ховере */
-        color: var(--lp-graphite);
-    }
-
-    /* Чётные строки — полосатость */
-    .table-lemanapro tbody tr:nth-child(even) td {
-        background-color: #fafafa !important;
-    }
-
-    .table-lemanapro tbody tr:nth-child(even):hover td {
-        background-color: #fff9e6 !important;
-    }
-
-    /* Футер таблицы */
-    .table-lemanapro tfoot th,
-    .table-lemanapro tfoot td {
-        background-color: var(--lp-yellow) !important;
-        color: var(--lp-graphite) !important;
-        font-weight: 700;
-        padding: 12px 16px;
-        /*text-align: center;*/
-        border-top: 2px solid var(--lp-graphite);
-    }
-
-        .table-lemanapro tfoot td:hover {
-            background-color: #ffe600 !important;
-        }
-
-/* Адаптивность */
-.table-responsive {
-    margin-top: 1rem;
-}
-
-/* Стиль загрузки и пустых данных */
-.table-lemanapro tbody tr td.text-center {
-    padding: 32px;
-    font-size: 1.1rem;
-    color: #666;
-    background-color: #fafafa !important;
-}
-
-/* Сортировка — индикаторы */
-.sort-indicator {
-    display: inline-block;
-    width: 12px;
-    margin-left: 6px;
-    opacity: 0.6;
-    transition: all 0.2s;
-}
-
-.sort-indicator.active {
-    opacity: 1;
-    color: var(--lp-yellow);
-    font-weight: bold;
+.card-header {
+    background-color: var(--lp-light-gray);
+    border-bottom: 2px solid var(--lp-yellow);
+    color: var(--lp-graphite);
+    font-weight: 600;
 }
 
 /* =============================================
-   👤 СТРАНИЦА ПРОФИЛЯ — СТИЛЬ ЛЕМАН ПРО
+   🏷️ БЕЙДЖИ
    ============================================= */
 
-/* Меню управления профилем */
+.badge.bg-primary {
+    background-color: var(--lp-graphite) !important;
+    color: var(--lp-white) !important;
+}
+
+.badge.bg-success {
+    background-color: var(--lp-success) !important;
+}
+
+.badge.bg-warning {
+    background-color: var(--lp-orange) !important;
+    color: var(--lp-white) !important;
+}
+
+.badge.bg-danger {
+    background-color: var(--lp-danger) !important;
+}
+
+/* =============================================
+    АЛЕРТЫ
+   ============================================= */
+
+.alert-primary {
+    color: var(--lp-graphite);
+    background-color: #FFF9E6;
+    border-color: var(--lp-yellow-dark);
+}
+
+.alert-success {
+    color: #1B5E20;
+    background-color: #E8F5E9;
+    border-color: #A5D6A7;
+}
+
+.alert-warning {
+    color: #E65100;
+    background-color: #FFF3E0;
+    border-color: #FFB74D;
+}
+
+.alert-danger {
+    color: var(--lp-danger);
+    background-color: #FFEBEE;
+    border-color: #EF9A9A;
+}
+
+/* =============================================
+    УТИЛИТЫ
+   ============================================= */
+
+.content {
+    padding-top: 1.1rem;
+}
+
+.main-container {
+    padding-top: 3.5rem;
+    padding-bottom: 2rem;
+}
+
+.text-primary {
+    color: var(--lp-graphite) !important;
+}
+
+.border-primary {
+    border-color: var(--lp-graphite) !important;
+}
+
+.bg-primary {
+    background-color: var(--lp-graphite) !important;
+    color: var(--lp-white) !important;
+}
+
+/* Hover для таблиц */
+.table-active {
+    background-color: #FFF9E6 !important;
+}
+
+/* Accessibility — видимый фокус */
+*:focus-visible {
+    outline: 2px solid var(--lp-blue);
+    outline-offset: 2px;
+}
+
+/* =============================================
+    ТАБЫ
+   ============================================= */
+
+.lemana-tabs .nav-link {
+    color: var(--lp-graphite) !important;
+    background-color: var(--lp-light-gray) !important;
+    border: none !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 12px 24px !important;
+    font-weight: 500 !important;
+    margin-right: 4px !important;
+    transition: all 0.3s ease !important;
+}
+
+    .lemana-tabs .nav-link.active {
+        background-color: var(--lp-graphite) !important;
+        color: var(--lp-yellow) !important;
+        border-bottom: 3px solid var(--lp-yellow) !important;
+    }
+
+    .lemana-tabs .nav-link:hover {
+        background-color: #E8E8E8 !important;
+    }
+
+    .lemana-tabs .nav-link.active:hover {
+        background-color: #1a1a1a !important;
+    }
+
+/* =============================================
+   👤 СТРАНИЦА ПРОФИЛЯ
+   ============================================= */
+
 .manage-nav-menu {
     background-color: var(--lp-light-gray);
     border-radius: 8px;
@@ -396,8 +474,8 @@ h1, h2, h3, h4, h5, h6 {
     }
 
         .manage-nav-menu .nav-link:hover {
-            background-color: rgba(254, 213, 0, 0.15);
-            border-color: var(--lp-yellow);
+            background-color: rgba(254, 213, 0, 0.2);
+            border-color: var(--lp-yellow-dark);
             transform: translateX(4px);
         }
 
@@ -409,13 +487,6 @@ h1, h2, h3, h4, h5, h6 {
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
-        .manage-nav-menu .nav-link i {
-            font-size: 1.1rem;
-            width: 1.5rem;
-            text-align: center;
-        }
-
-/* Заголовок страницы профиля */
 .profile-title {
     color: var(--lp-graphite);
     font-weight: 700;
@@ -424,113 +495,6 @@ h1, h2, h3, h4, h5, h6 {
     display: inline-block;
     margin-bottom: 1.5rem;
 }
-
-/* Формы профиля */
-.form-floating .form-control {
-    border: 2px solid var(--lp-border);
-    border-radius: 6px;
-    transition: all 0.3s ease;
-}
-
-    .form-floating .form-control:focus {
-        border-color: var(--lp-yellow);
-        box-shadow: 0 0 0 0.25rem rgba(254, 213, 0, 0.25);
-    }
-
-    .form-floating .form-control:disabled {
-        background-color: var(--lp-light-gray);
-        opacity: 0.75;
-        cursor: not-allowed;
-        color: var(--lp-graphite);
-    }
-
-.form-floating label {
-    color: var(--lp-graphite);
-    font-weight: 500;
-}
-
-.form-text.text-muted {
-    color: #6c757d !important;
-    font-size: 0.875rem;
-    margin-top: 0.25rem;
-    display: block;
-}
-
-/* Кнопка сохранения */
-.btn-primary {
-    background-color: var(--lp-graphite);
-    border-color: var(--lp-graphite);
-    color: var(--lp-white);
-    font-weight: 600;
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
-    transition: all 0.3s ease;
-}
-
-.btn-primary:hover {
-    background-color: #1a1a1a;
-    border-color: #1a1a1a;
-    color: var(--lp-yellow);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.btn-warning {
-    background-color: var(--lp-yellow);
-    border-color: var(--lp-yellow);
-    color: var(--lp-graphite) !important;
-    font-weight: 600;
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
-    transition: all 0.3s ease;
-}
-
-.btn-warning:hover:not(:disabled) {
-    background-color: #e6c000;
-    border-color: #e6c000;
-    color: var(--lp-graphite) !important;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.btn-warning:disabled {
-    background-color: #f0e6a8;
-    border-color: #f0e6a8;
-    color: var(--lp-graphite) !important;
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-.lemana-tabs .nav-link {
-    color: #495057 !important;
-    background-color: #f8f9fa !important;
-    border: none !important;
-    border-radius: 8px 8px 0 0 !important;
-    padding: 12px 24px !important;
-    font-weight: 500 !important;
-    margin-right: 4px !important;
-    transition: all 0.3s ease !important;
-}
-
-.lemana-tabs .nav-link.active {
-    background-color: #0055A4 !important; /* Синий Лемана */
-    color: #fff !important;
-    border-bottom: 3px solid #FFA500 !important; /* Оранжевый акцент */
-}
-
-.lemana-tabs .nav-link:hover {
-    background-color: #e9ecef !important;
-    color: #0055A4 !important;
-}
-
-.lemana-tabs .nav-link.active:hover {
-    background-color: #004494 !important;
-}
-
-.lemana-tabs .nav-link i {
-    font-size: 1.1rem;
-}
-
 
 /* Адаптивность */
 @media (max-width: 768px) {

@@ -2,194 +2,359 @@
 @attribute [Authorize(Roles = "AdminStore, AdminSuper")]
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Newtonsoft.Json
-@using Cutter.Data
+@using Cutter.Services
 @using System.Security.Claims
-@using static Cutter.Data.DBModels
-@inject ApplicationDbContext DbContext
+@inject IStoreAdminService StoreAdminService
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Аналитика магазина</PageTitle>
 
+<!-- Используем CDN для гарантии загрузки Chart.js -->
+<script src="js/chart.js"></script>
+
 <div class="container mt-4">
-    <h2>Аналитика магазина — @DateTime.Today.ToString("dd.MM.yyyy")</h2>
+    <h2 class="mb-4" style="color: #0055A4;">📊 Аналитика склада и материалов</h2>
 
     @if (isLoading)
     {
         <div class="d-flex justify-content-center my-5">
-            <div class="spinner-border text-primary" role="status">
+            <div class="spinner-border" role="status" style="color: #0055A4;">
                 <span class="visually-hidden">Загрузка...</span>
             </div>
         </div>
     }
-    else
+    else if (dashboardData != null)
     {
-        <!-- Виджет: количество распиловок -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card border-primary">
-                    <div class="card-body">
-                        <h5 class="card-title text-primary">Распиловок сегодня</h5>
-                        <h2 class="display-4">@totalCuttingPlans</h2>
+        <!-- Фильтр дат -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Начальная дата</label>
+                        <input type="date" class="form-control" @bind="startDate" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Конечная дата</label>
+                        <input type="date" class="form-control" @bind="endDate" />
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn w-100 text-white" style="background-color: #0055A4;" @onclick="LoadData">
+                            🔄 Обновить данные
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Таблица листов -->
-        <h4>Использованные листы (@sheetStats.Count)</h4>
-        @if (sheetStats.Any())
-        {
+        <!-- KPI Карточки -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #0055A4 0%, #0077C8 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Распиловок</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalPlans</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">📋</div>
+                        </div>
+                        <small class="opacity-75 mt-2 d-block">за выбранный период</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #F58220 0%, #FF9F43 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Всего листов</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalSheetsUsed</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">📦</div>
+                        </div>
+                        <small class="opacity-75 mt-2 d-block">Типов: <strong>@dashboardData.Stats.UniqueSheetTypes</strong></small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #2C3E50 0%, #34495E 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Стоимость материалов</h6>
+                                <h2 class="mb-0 fw-bold">@dashboardData.Stats.TotalMaterialCost.ToString("N0") ₽</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">💰</div>
+                        </div>
+                        <small class="opacity-75 mt-2 d-block">Топ лист: <strong>@dashboardData.Stats.TopSheetName</strong></small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card shadow-sm h-100 border-0 text-white" style="background: linear-gradient(135deg, #27AE60 0%, #2ECC71 100%);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 mb-1">Средний чек материала</h6>
+                                @{
+                                    var avgCheck = dashboardData.Stats.TotalPlans > 0
+                                    ? dashboardData.Stats.TotalMaterialCost / dashboardData.Stats.TotalPlans
+                                    : 0;
+                                }
+                                <h2 class="mb-0 fw-bold">@avgCheck.ToString("N0") ₽</h2>
+                            </div>
+                            <div class="fs-1 opacity-50">📈</div>
+                        </div>
+                        <small class="opacity-75 mt-2 d-block">материалов на 1 бланк</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Графики -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-7">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-bold text-white" style="background-color: #0055A4;">
+                        📈 Динамика расхода листов (шт. в день)
+                    </div>
+                    <div class="card-body">
+                        <canvas id="dailyUsageChart" height="120"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-bold text-white" style="background-color: #F58220;">
+                        🥧 Структура затрат на материалы
+                    </div>
+                    <div class="card-body d-flex align-items-center justify-content-center">
+                        <canvas id="materialCostChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Детальная таблица -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-bold text-white" style="background-color: #2C3E50;">
+                📋 Детализация по типам листов
+            </div>
             <div class="table-responsive">
-                <table class="table table-striped">
+                <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Наименование</th>
-                            <th>Арикул</th>
-                            <th>Количество</th>
-                            <th>Цена за лист, ₽</th>
-                            <th>Сумма, ₽</th>
+                            <th style="width: 35%; cursor: pointer;" @onclick="@(() => SortBy("Name"))">
+                                Наименование @GetSortIndicator("Name")
+                            </th>
+                            <th style="width: 15%; cursor: pointer;" @onclick="@(() => SortBy("SKU"))">
+                                Артикул @GetSortIndicator("SKU")
+                            </th>
+                            <th style="width: 15%; cursor: pointer;" @onclick="@(() => SortBy("Quantity"))">
+                                Кол-во (шт) @GetSortIndicator("Quantity")
+                            </th>
+                            <th style="width: 15%; cursor: pointer;" @onclick="@(() => SortBy("PricePerSheet"))">
+                                Цена за лист @GetSortIndicator("PricePerSheet")
+                            </th>
+                            <th style="width: 20%; cursor: pointer;" @onclick="@(() => SortBy("TotalAmount"))">
+                                Общая сумма @GetSortIndicator("TotalAmount")
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var stat in sheetStats)
+                        @foreach (var stat in GetSortedStats())
                         {
                             <tr>
-                                <td>@stat.Name</td>
-                                <td><code>@stat.SKU</code></td>
-                                <td>@stat.Quantity</td>
-                                <td>@stat.PricePerSheet.ToString("N0")</td>
-                                <td class="fw-bold">@stat.TotalAmount.ToString("N0")</td>
+                                <td class="fw-bold">@stat.Name</td>
+                                <td><code class="bg-light px-2 py-1 rounded">@stat.SKU</code></td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary fs-6">@stat.Quantity</span>
+                                </td>
+                                <td class="text-end">@stat.PricePerSheet.ToString("N0") ₽</td>
+                                <td class="text-end fw-bold" style="color: #0055A4;">@stat.TotalAmount.ToString("N0") ₽</td>
                             </tr>
                         }
                     </tbody>
                     <tfoot class="table-light fw-bold">
                         <tr>
-                            <td colspan="4" class="text-end">Итого:</td>
-                            <td>@totalSheetAmount.ToString("N0") ₽</td>
+                            <td colspan="4" class="text-end">ИТОГО МАТЕРИАЛОВ:</td>
+                            <td class="text-end" style="color: #F58220; font-size: 1.1em;">@dashboardData.Stats.TotalMaterialCost.ToString("N0") ₽</td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
-        }
-        else
-        {
-            <div class="alert alert-info">
-                Сегодня не использовано ни одного листа.
-            </div>
-        }
+        </div>
     }
 </div>
 
 @code {
     private bool isLoading = true;
-    private string? adminId;
-    private Guid? adminStoreId;
-    private int totalCuttingPlans = 0;
-    private decimal totalSheetAmount = 0;
-    private List<SheetStat> sheetStats = new();
+    private DateTime startDate = DateTime.Today.AddDays(-30);
+    private DateTime endDate = DateTime.Today;
+    private StoreAdminDashboardData? dashboardData;
+    private string? currentUserId;
+
+    private string sortField = "TotalAmount";
+    private bool sortAsc = false;
+
+    // Флаг для отслеживания отрисовки графиков
+    private bool _chartsReady = false;
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        if (user.Identity.IsAuthenticated)
+        currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        await LoadData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // ИСПРАВЛЕНИЕ: вызываем отрисовку, когда данные есть, независимо от firstRender
+        if (dashboardData != null && !_chartsReady)
         {
-            adminId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!string.IsNullOrEmpty(adminId))
-            {
-                var admin = await DbContext.Users.FindAsync(adminId);
-                if (admin != null)
-                {
-                    adminStoreId = admin.StoreId;
-                    await LoadData();
-                }
-            }
+            await UpdateCharts();
+            _chartsReady = true;
         }
     }
 
     private async Task LoadData()
     {
+        if (string.IsNullOrEmpty(currentUserId)) return;
+
         isLoading = true;
+        _chartsReady = false; // Сбрасываем флаг, чтобы графики перерисовались при новом фильтре
         StateHasChanged();
 
-        var today = DateTime.Today;
-
-        // Загружаем все распиловки в магазине за сегодня
-        var plans = await DbContext.CutPlan
-            .Where(cp => cp.UserId != null && 
-                         cp.CreateDate.Date == today && 
-                         cp.IsSave &&
-                         cp.User.StoreId == adminStoreId)
-            .ToListAsync();
-
-        // Фильтруем по магазину админа
-        var filteredPlans = new List<CutPlan>();
-        foreach (var plan in plans)
+        try
         {
-            var user = await DbContext.Users.FindAsync(plan.UserId);
-            if (user != null/* && user.StoreId == adminStoreId*/)
-            {
-                filteredPlans.Add(plan);
-            }
+            dashboardData = await StoreAdminService.GetDashboardDataAsync(currentUserId, startDate, endDate);
         }
-
-        totalCuttingPlans = filteredPlans.Count;
-
-        // Собираем статистику по листам
-        var sheetDict = new Dictionary<string, SheetStat>();
-
-        foreach (var dbPlan in filteredPlans)
+        catch (Exception ex)
         {
-            if (string.IsNullOrEmpty(dbPlan.CuttingPlan)) continue;
-
-            try
-            {
-                var cuttingPlans = JsonConvert.DeserializeObject<List<CuttingPlan>>(dbPlan.CuttingPlan);
-                if (cuttingPlans == null) continue;
-
-                foreach (var cp in cuttingPlans)
-                {
-                    foreach (var layout in cp.SheetLayouts)
-                    {
-                        var sheet = layout.Sheet;
-                        var key = $"{sheet.SKU}_{sheet.Price}_{sheet.CutPrice}"; // уникальный ключ
-
-                        if (!sheetDict.ContainsKey(key))
-                        {
-                            sheetDict[key] = new SheetStat
-                            {
-                                Name = sheet.Name ?? sheet.SKU,
-                                SKU = sheet.SKU,
-                                PricePerSheet = (decimal)sheet.Price
-                            };
-                        }
-
-                        sheetDict[key].Quantity += 1;
-                        sheetDict[key].TotalAmount += (decimal)sheet.Price;
-                    }
-                }
-            }
-            catch { /* игнорируем ошибки десериализации */ }
+            Console.WriteLine($"Ошибка загрузки аналитики: {ex.Message}");
         }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
 
-        sheetStats = sheetDict.Values
-            .OrderByDescending(s => s.TotalAmount)
-            .ToList();
+    private async Task UpdateCharts()
+    {
+        if (dashboardData == null) return;
 
-        totalSheetAmount = sheetStats.Sum(s => s.TotalAmount);
+        await JSRuntime.InvokeVoidAsync("updateStoreAdminCharts",
+            dashboardData.ChartLabels,
+            dashboardData.ChartQtyData,
+            dashboardData.PieLabels,
+            dashboardData.PieCostData);
+    }
 
-        isLoading = false;
+    private void SortBy(string field)
+    {
+        if (sortField == field)
+        {
+            sortAsc = !sortAsc;
+        }
+        else
+        {
+            sortField = field;
+            sortAsc = true;
+        }
         StateHasChanged();
     }
 
-    private class SheetStat
+    private List<SheetUsageStat> GetSortedStats()
     {
-        public string Name { get; set; } = string.Empty;
-        public string SKU { get; set; } = string.Empty;
-        public int Quantity { get; set; }
-        public decimal PricePerSheet { get; set; }
-        public decimal TotalAmount { get; set; }
+        if (dashboardData?.SheetStats == null) return new();
+
+        return sortField switch
+        {
+            "Name" => sortAsc ? dashboardData.SheetStats.OrderBy(s => s.Name).ToList() : dashboardData.SheetStats.OrderByDescending(s => s.Name).ToList(),
+            "SKU" => sortAsc ? dashboardData.SheetStats.OrderBy(s => s.SKU).ToList() : dashboardData.SheetStats.OrderByDescending(s => s.SKU).ToList(),
+            "Quantity" => sortAsc ? dashboardData.SheetStats.OrderBy(s => s.Quantity).ToList() : dashboardData.SheetStats.OrderByDescending(s => s.Quantity).ToList(),
+            "PricePerSheet" => sortAsc ? dashboardData.SheetStats.OrderBy(s => s.PricePerSheet).ToList() : dashboardData.SheetStats.OrderByDescending(s => s.PricePerSheet).ToList(),
+            "TotalAmount" => sortAsc ? dashboardData.SheetStats.OrderBy(s => s.TotalAmount).ToList() : dashboardData.SheetStats.OrderByDescending(s => s.TotalAmount).ToList(),
+            _ => dashboardData.SheetStats
+        };
+    }
+
+    private MarkupString GetSortIndicator(string field)
+    {
+        if (sortField != field) return new MarkupString("");
+        return new MarkupString(sortAsc ? " <span style='color: #0055A4;'>▲</span>" : " <span style='color: #0055A4;'>▼</span>");
     }
 }
+
+<script>
+    (function() {
+        let dailyChartInstance = null;
+        let costChartInstance = null;
+
+        window.updateStoreAdminCharts = function (labels, qtyData, pieLabels, pieCostData) {
+            const colorBlue = '#0055A4';
+            const colorBlueLight = 'rgba(0, 85, 164, 0.7)';
+
+            const pieColors = ['#0055A4', '#F58220', '#2C3E50', '#27AE60', '#8E44AD', '#95A5A6'];
+
+            if (dailyChartInstance) dailyChartInstance.destroy();
+            if (costChartInstance) costChartInstance.destroy();
+
+            const ctxDaily = document.getElementById('dailyUsageChart').getContext('2d');
+            dailyChartInstance = new Chart(ctxDaily, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Использовано листов (шт)',
+                        data: qtyData,
+                        backgroundColor: colorBlueLight,
+                        borderColor: colorBlue,
+                        borderWidth: 2,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            const ctxCost = document.getElementById('materialCostChart').getContext('2d');
+            costChartInstance = new Chart(ctxCost, {
+                type: 'doughnut',
+                data: {
+                    labels: pieLabels,
+                    datasets: [{
+                        data: pieCostData,
+                        backgroundColor: pieColors.slice(0, pieLabels.length),
+                        borderColor: '#ffffff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                                    return context.label + ': ' + context.parsed.toLocaleString('ru-RU') + ' ₽ (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
+    })();
+</script>

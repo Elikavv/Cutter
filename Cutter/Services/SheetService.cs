@@ -39,6 +39,7 @@ namespace Cutter.Services
                     Depth = si.Item.Depth,
                     Id = si.Item.Id,
                     Price = si.Price,
+                    MaterialTypeId = si.Item.MaterialTypeId,
                     CutPrice = si.Item.MaterialType.StoreMaterialCutPrices.FirstOrDefault(x => x.MaterialTypeId == si.Item.MaterialTypeId).CutPrice,
                 })
                 .ToListAsync();
@@ -58,6 +59,8 @@ namespace Cutter.Services
                     Depth = x.Depth,
                     Id = x.Id,
                     Price = x.Price,
+                    MaterialTypeId = x.MaterialTypeId,
+                    CutPrice = x.MaterialType.StoreMaterialCutPrices.FirstOrDefault(z => z.MaterialTypeId == x.MaterialTypeId).CutPrice
                 })
                 .ToListAsync();
         }
@@ -76,6 +79,8 @@ namespace Cutter.Services
                     Depth = x.Depth,
                     Id = x.Id,
                     Price = x.Price,
+                    MaterialTypeId = x.MaterialTypeId,
+                    CutPrice = x.MaterialType.StoreMaterialCutPrices.FirstOrDefault(z => z.MaterialTypeId == x.MaterialTypeId).CutPrice
                 })
                 .FirstOrDefaultAsync();
         }

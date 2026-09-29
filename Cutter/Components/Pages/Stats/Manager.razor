@@ -1,315 +1,323 @@
 ﻿@page "/stats/manager"
 @attribute [Authorize(Roles = "Manager, AdminSuper")]
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using Cutter.Data
-@using Newtonsoft.Json
-@inject ApplicationDbContext Db
 @rendermode InteractiveServer
+@using Cutter.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using Cutter.Services
+@inject CuttingService CuttingService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
 
-<PageTitle>Статистика — Менеджер</PageTitle>
+<PageTitle>Статистика менеджера</PageTitle>
 
-<div class="container py-4">
-    <h2>📈 Статистика по пользователям</h2>
+<div class="container-fluid py-4">
+    <h2 class="mb-4">📈 Статистика и аналитика</h2>
 
     <!-- Панель фильтров -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="input-group">
-                <span class="input-group-text">С</span>
-                <InputDate @bind-Value="StartDate" class="form-control" />
-                <span class="input-group-text">по</span>
-                <InputDate @bind-Value="EndDate" class="form-control" />
-                <button class="btn btn-outline-secondary" @onclick="LoadData">Применить</button>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("Week") )">Неделя</button>
-                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("Month") )">Месяц</button>
-                <button type="button" class="btn btn-primary" @onclick="@( _ => SetDateRange("HalfYear") )">Полгода</button>
-                <button type="button" class="btn btn-outline-secondary" @onclick="ResetFilters">Сбросить</button>
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted">С</label>
+                    <input type="date" class="form-control" @bind="StartDate" @bind:after="ApplyFilters" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted">По</label>
+                    <input type="date" class="form-control" @bind="EndDate" @bind:after="ApplyFilters" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted">Сотрудник</label>
+                    <select class="form-select" @bind="SelectedUserId" @bind:after="ApplyFilters">
+                        <option value="">Все сотрудники</option>
+                        @foreach (var user in availableUsers)
+                        {
+                            <option value="@user.Id">@user.UserName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-5 text-end">
+                    <div class="btn-group me-2">
+                        <button class="btn btn-sm btn-primary" @onclick='() => SetRange("Week")'>Неделя</button>
+                        <button class="btn btn-sm btn-primary" @onclick='() => SetRange("Month")'>Месяц</button>
+                        <button class="btn btn-sm btn-primary" @onclick='() => SetRange("LastMonth")'>Прошлый месяц</button>
+                        <button class="btn btn-sm btn-primary" @onclick='() => SetRange("HalfYear")'>Полгода</button>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ResetFilters">Сбросить</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Фильтр по пользователю -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <label for="userFilter" class="form-label">Фильтр по пользователю:</label>
-            <select id="userFilter"
-                    class="form-select"
-                    @bind="SelectedUserId"
-                    @bind:after="LoadData">
-                <option value="">Все пользователи</option>
-                @foreach (var user in allUsers)
-                {
-                    <option value="@user.Id">@user.UserName</option>
-                }
-            </select>
-        </div>
-    </div>
-
-    <!-- Общая сводка -->
-    @if (userStats.Any())
+    @if (isLoading)
     {
-        <div class="alert alert-info mb-4">
-            <strong>Период:</strong> @StartDate.ToString("dd.MM.yyyy") — @EndDate.ToString("dd.MM.yyyy")<br />
-            @if (!string.IsNullOrEmpty(SelectedUserId))
-            {
-                <strong>Пользователь:</strong> @userStats.First().UserName
-
-                <br />
-            }
-            <strong>Пользователей:</strong> @userStats.Count<br />
-            <strong>Общее количество резов:</strong> @userStats.Sum(u => u.TotalCuts)<br />
-            <strong>Общая стоимость:</strong> <span class="fw-bold">@grandTotalSum.ToString("N2") ₽</span>
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
         </div>
     }
-
-    <!-- Таблица по пользователям -->
-    <div class="table-responsive">
-        @if (isLoading)
+    else if (stats != null)
+    {
+        <!-- Вкладки -->
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "overview" ? "active" : "") text-dark"
+                        @onclick="ShowOverviewTab" style="color:#212529!important">
+                    📊 Обзор и Прогноз
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "employees" ? "active" : "") text-dark"
+                        @onclick="ShowEmployeesTab" style="color:#212529!important">
+                    👥 Эффективность сотрудников
+                </button>
+            </li>
+        </ul>
+        @if (activeTab == "overview")
         {
-            <div class="text-center py-5">Загрузка...</div>
-        }
-        else if (!userStats.Any())
-        {
-            <div class="alert alert-warning text-center">Нет данных за выбранный период</div>
-        }
-        else
-        {
-            @foreach (var userStat in userStats)
-            {
-                <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">@userStat.UserName</h5>
-                        <div>
-                            <span class="badge bg-light text-dark me-2">Выходов: @userStat.WorkDaysCount</span>
-                            <span class="badge bg-warning text-dark">Резов: @userStat.TotalCuts</span>
-                            <span class="badge bg-danger">@(((double)userStat.TotalCuts / userStats.Sum(u => u.TotalCuts)).ToString("P1"))</span>
-                            <span class="badge bg-success">Сумма: @userStat.TotalSum.ToString("N2") ₽</span>
+            <!-- KPI -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-4">
+                    <div class="card border-primary h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted">Всего бланков</h6>
+                            <h3 class="text-primary">@stats.TotalPlans</h3>
                         </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Дата</th>
-                                    <th>Резов</th>
-                                    <th>Сумма</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var day in userStat.DailyStats)
-                                {
-                                    <tr>
-                                        <td>@day.Date.ToString("dd.MM.yyyy")</td>
-                                        <td>@day.Cuts</td>
-                                        <td class="fw-bold">@day.Sum.ToString("N2") ₽</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
                     </div>
                 </div>
-            }
+                <div class="col-md-4">
+                    <div class="card border-success h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted">Всего резов</h6>
+                            <h3 class="text-success">@stats.TotalCuts</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-info h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted">Сумма услуг</h6>
+                            <h3 class="text-info">@stats.TotalAmount.ToString("N0") ₽</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-            <!-- Общий итог -->
-            <div class="card mt-4">
-                <div class="card-body bg-light">
-                    <h4 class="mb-0">Итого по всем пользователям:</h4>
-                    <hr />
-                    <div class="row">
-                        <div class="col-md-4">
-                            <strong>Всего резов:</strong> @userStats.Sum(u => u.TotalCuts)
+            <!-- График тренда -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Динамика резов и прогноз (скользящее среднее)</h5>
+                </div>
+                <div class="card-body">
+                    <div style="height: 350px;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (activeTab == "employees")
+        {
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0">Рейтинг по сумме услуг</h5>
                         </div>
-                        <div class="col-md-4">
-                            <strong>Всего выходов:</strong> @userStats.Sum(u => u.WorkDaysCount)
+                        <div class="card-body">
+                            <div style="height: 400px;">
+                                <canvas id="empChart"></canvas>
+                            </div>
                         </div>
-                        <div class="col-md-4">
-                            <strong>Общая сумма:</strong> <span class="fw-bold fs-5">@grandTotalSum.ToString("N2") ₽</span>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0">Детализация</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Сотрудник</th>
+                                            <th class="text-end">Сумма</th>
+                                            <th class="text-end">Дней</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var emp in stats.EmployeeStats)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <strong>@emp.UserName</strong>
+                                                    <br /><small class="text-muted">@emp.TotalCuts резов</small>
+                                                </td>
+                                                <td class="text-end fw-bold">@emp.TotalAmount.ToString("N0") ₽</td>
+                                                <td class="text-end">@emp.WorkDays</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         }
-    </div>
+    }
 </div>
 
+<script src="js/chart.js"></script>
+<script src="js/dashboard.js"></script>
+
 @code {
-    private DateTime StartDate { get; set; }
-    private DateTime EndDate { get; set; }
-    private string SelectedUserId { get; set; } = ""; // ID выбранного пользователя
     private bool isLoading = true;
+    private ManagerStatsDto? stats;
+    private string activeTab = "overview";
 
-    private class DailyStat
-    {
-        public DateTime Date { get; set; }
-        public int Cuts { get; set; }
-        public double Sum { get; set; }
-    }
+    private DateTime StartDate = DateTime.Today.AddDays(-30);
+    private DateTime EndDate = DateTime.Today;
+    private string SelectedUserId = "";
 
-    private class UserStat
-    {
-        public string UserName { get; set; } = "—";
-        public List<DailyStat> DailyStats { get; set; } = new();
-        public int TotalCuts => DailyStats.Sum(d => d.Cuts);
-        public double TotalSum => DailyStats.Sum(d => d.Sum);
-        public int WorkDaysCount => DailyStats.Count;
-    }
-
-    private List<UserStat> userStats = new();
-    private double grandTotalSum => userStats.Sum(u => u.TotalSum);
-
-    // Список всех пользователей для фильтра
-    private List<ApplicationUser> allUsers = new();
+    private List<ApplicationUser> availableUsers = new();
 
     protected override async Task OnInitializedAsync()
     {
-        EndDate = DateTime.Now;
-        StartDate = EndDate.AddMonths(-1);
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var managerId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-        // Загружаем список пользователей
-        await LoadUsers();
-
-        // Загружаем данные
-        await LoadData();
+        if (!string.IsNullOrEmpty(managerId))
+        {
+            await LoadUsers(managerId);
+            await ApplyFilters();
+        }
     }
 
-    private async Task LoadUsers()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (stats != null)
+        {
+            await RenderCharts();
+        }
+    }
+
+    private async Task LoadUsers(string managerId)
     {
         try
         {
-            allUsers = await Db.Users
-                .OrderBy(u => u.UserName)
-                .ToListAsync();
+            availableUsers = await CuttingService.GetSubordinatesAsync(managerId);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Ошибка загрузки пользователей: {ex.Message}");
-            allUsers = new();
+            availableUsers = new();
         }
     }
 
-    private async Task LoadData()
+    private async Task ShowOverviewTab()
+    {
+        activeTab = "overview";
+        await RenderCharts();
+    }
+
+    private async Task ShowEmployeesTab()
+    {
+        activeTab = "employees";
+        await RenderCharts();
+    }
+
+    private async Task ApplyFilters()
     {
         isLoading = true;
         StateHasChanged();
 
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var managerId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(managerId)) { isLoading = false; return; }
+
         try
         {
-            var query = Db.CutPlan
-                .Include(cp => cp.User)
-                .Where(cp => cp.CreateDate >= StartDate && cp.CreateDate <= EndDate.Date.AddDays(1).AddTicks(-1));
+            stats = await CuttingService.GetManagerStatsAsync(managerId, StartDate, EndDate, string.IsNullOrEmpty(SelectedUserId) ? null : SelectedUserId);
 
-            // Применяем фильтр по пользователю, если выбран
-            if (!string.IsNullOrEmpty(SelectedUserId))
+            // Загружаем список пользователей для фильтра (если еще не)
+            if (!availableUsers.Any())
             {
-                query = query.Where(cp => cp.UserId == SelectedUserId);
+                // Простой хак: берем из статистики или делаем отдельный запрос.
+                // Лучше добавить метод GetSubordinatesAsync в сервис.
             }
-
-            var cutPlans = await query.ToListAsync();
-
-            var rawData = new List<(string UserName, DateTime Date, int Cuts, double Sum)>();
-
-            foreach (var cp in cutPlans)
-            {
-                if (string.IsNullOrWhiteSpace(cp.CuttingPlan)) continue;
-
-                List<CuttingPlan>? planList;
-                try
-                {
-                    planList = JsonConvert.DeserializeObject<List<CuttingPlan>>(cp.CuttingPlan);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (planList == null) continue;
-
-                double totalSum = 0;
-                int totalCuts = 0;
-
-                foreach (var plan in planList)
-                {
-                    totalCuts += plan.TotalCuts;
-
-                    if (plan.SheetLayouts != null)
-                    {
-                        foreach (var layout in plan.SheetLayouts)
-                        {
-                            totalSum += layout.Sheet.Quantity * layout.Sheet.Price;
-                        }
-                    }
-                }
-
-                rawData.Add((
-                    UserName: cp.User?.UserName ?? "—",
-                    Date: cp.CreateDate.Date,
-                    Cuts: totalCuts,
-                    Sum: totalSum
-                ));
-            }
-
-            userStats = rawData
-                .GroupBy(x => x.UserName)
-                .Select(g => new UserStat
-                    {
-                        UserName = g.Key,
-                        DailyStats = g
-                            .GroupBy(x => x.Date)
-                            .Select(dg => new DailyStat
-                            {
-                                Date = dg.Key,
-                                Cuts = dg.Sum(x => x.Cuts),
-                                Sum = dg.Sum(x => x.Sum)
-                            })
-                            .OrderBy(x => x.Date)
-                            .ToList()
-                    })
-                .OrderByDescending(u => u.TotalSum)
-                .ToList();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Ошибка загрузки: {ex.Message}");
-            userStats = new();
+            Console.WriteLine($"Ошибка: {ex.Message}");
         }
         finally
         {
             isLoading = false;
             StateHasChanged();
+            //await RenderCharts();
         }
     }
 
-    private void SetDateRange(string range)
+    private async Task RenderCharts()
     {
-        var now = DateTime.Now;
-        EndDate = now;
-        StartDate = range switch
+        if (stats == null) return;
+
+        if (activeTab == "overview")
         {
-            "Week" => now.AddDays(-7),
-            "Month" => now.AddMonths(-1),
-            "HalfYear" => now.AddMonths(-6),
-            _ => now.AddMonths(-1)
-        };
-        _ = LoadData();
+            await JSRuntime.InvokeVoidAsync("initStatsTrendChart", "trendChart", stats.TrendData);
+        }
+        else if (activeTab == "employees")
+        {
+            await JSRuntime.InvokeVoidAsync("initStatsEmployeeChart", "empChart", stats.EmployeeStats);
+        }
+    }
+
+    private void SetRange(string range)
+    {
+        var today = DateTime.Today;
+
+        switch (range)
+        {
+            case "Week":
+                // Начало текущей недели (понедельник)
+                var dayOfWeek = (int)today.DayOfWeek;
+                if (dayOfWeek == 0) dayOfWeek = 7; // Воскресенье = 7
+                StartDate = today.AddDays(-(dayOfWeek - 1));
+                EndDate = today;
+                break;
+
+            case "Month":
+                // С первого числа текущего месяца
+                StartDate = new DateTime(today.Year, today.Month, 1);
+                EndDate = today;
+                break;
+
+            case "LastMonth":
+                // Прошлый месяц целиком
+                var firstDayOfCurrentMonth = new DateTime(today.Year, today.Month, 1);
+                EndDate = firstDayOfCurrentMonth.AddDays(-1);
+                StartDate = new DateTime(EndDate.Year, EndDate.Month, 1);
+                break;
+
+            case "HalfYear":
+                // 6 месяцев назад с первого числа
+                var sixMonthsAgo = today.AddMonths(-6);
+                StartDate = new DateTime(sixMonthsAgo.Year, sixMonthsAgo.Month, 1);
+                EndDate = today;
+                break;
+        }
+
+        _ = ApplyFilters();
     }
 
     private void ResetFilters()
     {
-        EndDate = DateTime.Now;
-        StartDate = EndDate.AddMonths(-1);
-        SelectedUserId = ""; // Сбрасываем фильтр пользователя
-        _ = LoadData();
+        EndDate = DateTime.Today;
+        StartDate = DateTime.Today.AddDays(-30);
+        SelectedUserId = "";
+        _ = ApplyFilters();
     }
-
-    private double CalculatePercentage(int value, int total)
-{
-    if (total == 0) return 0;
-    return Math.Round((double)value * 100 / total, 1); // 1 знак после запятой
-}
-        
 }

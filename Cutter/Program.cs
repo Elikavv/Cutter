@@ -6,10 +6,12 @@ using Cutter.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Infrastructure;
 using System.Globalization;
 using System.Net;
+using static Cutter.Services.PdfCuttingService;
 
 
 var ruCulture = (CultureInfo)CultureInfo.GetCultureInfo("ru-RU").Clone();
@@ -67,12 +69,22 @@ builder.Services.AddScoped<ThreeJSInterop>();
 builder.Services.AddScoped<CuttingState>();
 builder.Services.AddScoped<SheetService>();
 builder.Services.AddScoped<PdfCuttingService>();
+builder.Services.AddScoped<SvgLayoutService>();
 
 builder.Services.AddScoped<IStorePricingService, StorePricingService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStoreAccessService, StoreAccessService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IStoreContextService, StoreContextService>();
+
+builder.Services.AddScoped<ICashierService, CashierService>();
+builder.Services.AddScoped<IStoreAdminService, StoreAdminService>();
+builder.Services.AddScoped<IStoreStatsService, StoreStatsService>();
+builder.Services.AddScoped<IConstraintProfileService, ConstraintProfileService>();
+
+builder.Services.AddScoped<IBlankSearchService, BlankSearchService>();
+
+builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 
 
 var app = builder.Build();
@@ -140,10 +152,17 @@ app.MapGet("/api/pdf/{cuttingId:guid}", async (
     Guid cuttingId,
     CuttingService cuttingService,
     PdfCuttingService pdfService,
-    ILogger<Program> logger) =>
+    ILogger<Program> logger,
+    [FromQuery] string mode = "Full") => // <-- НОВЫЙ ПАРАМЕТР
 {
     try
     {
+        // Парсим строку в Enum (с защитой от некорреных значений)
+        if (!Enum.TryParse<PdfPrintMode>(mode, true, out var printMode))
+        {
+            printMode = PdfPrintMode.Full;
+        }
+
         var plans = await cuttingService.GetCuttingPlanUser(cuttingId.ToString());
         if (plans == null)
         {
@@ -151,14 +170,16 @@ app.MapGet("/api/pdf/{cuttingId:guid}", async (
             return Results.NotFound();
         }
 
+        // Сохраняем перед печатью (как было)
         cuttingService.SaveCuttangPlan(cuttingId.ToString());
 
-        var pdfBytes = pdfService.GeneratePdf(plans);
+        // Передаем режим в сервис
+        var pdfBytes = pdfService.GeneratePdf(plans, printMode);
 
         return Results.File(
             fileContents: pdfBytes,
             contentType: "application/pdf",
-            fileDownloadName: null // ← открыть в браузере, не скачивать
+            fileDownloadName: null
         );
     }
     catch (Exception ex)
@@ -168,5 +189,30 @@ app.MapGet("/api/pdf/{cuttingId:guid}", async (
     }
 });
 
+
+app.MapGet("/api/export/store-stats", async (
+    [FromQuery] Guid storeId,
+    [FromQuery] DateTime startDate,
+    [FromQuery] DateTime endDate,
+    IExcelExportService excelService,
+    ILogger<Program> logger) =>
+{
+    try
+    {
+        var bytes = await excelService.ExportStoreStatisticsAsync(storeId, startDate, endDate);
+        var fileName = $"Статистика_{startDate:yyyy-MM-dd}_{endDate:yyyy-MM-dd}.xlsx";
+
+        return Results.File(
+            fileContents: bytes,
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            fileDownloadName: fileName
+        );
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Ошибка экспорта статистики в Excel");
+        return Results.Problem("Ошибка генерации Excel");
+    }
+});
 
 app.Run();

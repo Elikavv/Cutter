@@ -9,6 +9,7 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject ApplicationDbContext DbContext
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Пользователи</PageTitle>
 
@@ -94,6 +95,7 @@
            User="editingUser"
            Stores="availableStores"
            AvailableRoles="GetAvailableRoles()"
+           @ref="userModalRef"
            OnClose="CloseModal"
            OnSave="HandleValidSubmit" />
 
@@ -119,6 +121,7 @@
 }
 
 @code {
+    private UserModal? userModalRef;
     private List<ApplicationUser> allUsers = new();
     private List<Store> allStores = new();
     private ApplicationUser? currentUser;
@@ -225,7 +228,6 @@
         }
         else if (IsUser)
         {
-            // Пользователь видит только себя
             return users.Where(u => u.Id == currentUser.Id).ToList();
         }
 
@@ -250,13 +252,13 @@
         if (currentUser == null) return false;
 
         if (IsAdminSuper)
-            return true; // может редактировать всех
+            return true;
 
         if (IsAdminStore || IsManager)
-            return user.StoreId == currentUser.StoreId; // только свой магазин
+            return user.StoreId == currentUser.StoreId;
 
         if (IsUser)
-            return user.Id == currentUser.Id; // только себя
+            return user.Id == currentUser.Id;
 
         return false;
     }
@@ -279,7 +281,7 @@
         else if (IsManager)
             return new() { "User" };
         else
-            return new() { "User" }; // fallback
+            return new() { "User" };
     }
 
     private void OpenCreateModal()
@@ -287,9 +289,15 @@
         editingUser = new ApplicationUser { Role = "User", UserName = "", Email = "" };
         isNew = true;
         isModalOpen = true;
+
+        // Предварительно выбираем магазин для AdminStore
+        if (IsAdminStore && currentUser?.StoreId != null)
+        {
+            editingUser.StoreId = currentUser.StoreId;
+        }
     }
 
-    private void OpenEditModal(ApplicationUser user)
+    private async void OpenEditModal(ApplicationUser user)
     {
         editingUser = new ApplicationUser
             {
@@ -301,12 +309,24 @@
             };
         isNew = false;
         isModalOpen = true;
+
+        // Если редактируем менеджера, загружаем его магазины
+        if (user.Role == "Manager")
+        {
+            var managerStores = await DbContext.ManagerStores
+                .Where(ms => ms.ManagerId == user.Id)
+                .Select(ms => ms.StoreId)
+                .ToListAsync();
+
+            userModalRef?.SetSelectedStores(managerStores);
+        }
     }
 
-    private async Task HandleValidSubmit((ApplicationUser User, string Password) data)
+    private async Task HandleValidSubmit((ApplicationUser User, string Password, List<Guid> StoreIds) data)
     {
         var user = data.User;
         var password = data.Password;
+        var storeIds = data.StoreIds;
 
         try
         {
@@ -324,6 +344,20 @@
                 var result = await UserManager.CreateAsync(newUser, password);
                 if (result.Succeeded)
                 {
+                    // Если это менеджер, добавляем связи с магазинами
+                    if (user.Role == "Manager" && storeIds.Any())
+                    {
+                        foreach (var storeId in storeIds)
+                        {
+                            DbContext.ManagerStores.Add(new ManagerStore
+                                {
+                                    ManagerId = newUser.Id,
+                                    StoreId = storeId
+                                });
+                        }
+                        await DbContext.SaveChangesAsync();
+                    }
+
                     _ = ShowNotification("Пользователь добавлен", "success");
                 }
                 else
@@ -356,6 +390,26 @@
                     var updateResult = await UserManager.UpdateAsync(existing);
                     if (updateResult.Succeeded)
                     {
+                        // Обновляем связи менеджера с магазинами
+                        if (user.Role == "Manager")
+                        {
+                            var existingLinks = await DbContext.ManagerStores
+                                .Where(ms => ms.ManagerId == existing.Id)
+                                .ToListAsync();
+
+                            DbContext.ManagerStores.RemoveRange(existingLinks);
+
+                            foreach (var storeId in storeIds)
+                            {
+                                DbContext.ManagerStores.Add(new ManagerStore
+                                    {
+                                        ManagerId = existing.Id,
+                                        StoreId = storeId
+                                    });
+                            }
+                            await DbContext.SaveChangesAsync();
+                        }
+
                         _ = ShowNotification("Пользователь обновлён", "info");
                     }
                     else
@@ -398,6 +452,16 @@
                 var user = await UserManager.FindByIdAsync(toDelete.Id);
                 if (user != null)
                 {
+                    // Удаляем связи менеджера с магазинами
+                    if (user.Role == "Manager")
+                    {
+                        var links = await DbContext.ManagerStores
+                            .Where(ms => ms.ManagerId == user.Id)
+                            .ToListAsync();
+                        DbContext.ManagerStores.RemoveRange(links);
+                        await DbContext.SaveChangesAsync();
+                    }
+
                     await UserManager.DeleteAsync(user);
                     await LoadData();
                     _ = ShowNotification("Пользователь удалён", "info");
