@@ -137,7 +137,7 @@
             {
                 @*<h5>Материал из базы</h5>*@
                 <div class="row g-3 align-items-end">
-                    <div class="col-md-5">
+                    <div class="col-md-3">
                         <label class="form-label">Поиск листа (Штрихкод/Артикул)</label>
                         <input @ref="searchInput" @key="CurrentMode" @bind="searchCode" @bind:event="oninput" @onkeydown="HandleKeyDown" disabled="@isLocked" placeholder="Введите и нажмите Enter" class="form-control" />
                         @if (showErrorSKU)
@@ -146,14 +146,56 @@
                         }
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label">Или выберите из списка</label>
+                        @*<label class="form-label">Или выберите из списка</label>
                         <select class="form-select" @onchange="AddSelectedSheet" disabled="@isLocked">
                             <option value="">-- Выберите лист --</option>
                             @foreach (var sheet in availableSheets)
                             {
                                 <option value="@sheet.Id">@sheet.Name (@sheet.Length x @sheet.Width мм) - @sheet.SKU</option>
                             }
-                        </select>
+                        </select>*@
+                        <label class="form-label">Или выберите из списка (поиск по названию)</label>
+                        <div class="position-relative">
+                                <input type="text"
+                                       class="form-control"
+                                       placeholder="Начните вводить название (мин. 2 символа)..."
+                                       value="@searchSheetName"
+                                       @oninput="OnSheetSearchInput"
+                                       disabled="@isLocked" />
+        
+                            <!-- Индикатор загрузки -->
+                            @if (isSearching)
+                            {
+                                <div class="position-absolute" style="right: 10px; top: 10px;">
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                </div>
+                            }
+
+                            <!-- Выпадающий список результатов -->
+                            @if (showSheetDropdown && searchResults.Any())
+                            {
+                                <div class="dropdown-menu show w-100" style="max-height: 300px; overflow-y: auto; z-index: 1050;">
+                                    @foreach (var sheet in searchResults)
+                                    {
+                                        <button class="dropdown-item d-flex justify-content-between align-items-start py-2" 
+                                                @onclick="() => SelectSheetFromSearch(sheet)"
+                                                style="white-space: normal; line-height: 1.3; cursor: pointer;">
+                                            <div>
+                                                <strong class="text-dark">@sheet.Name</strong>
+                                                <br/>
+                                                <small class="text-muted">@sheet.Length x @sheet.Width мм | Арт: @sheet.SKU</small>
+                                            </div>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else if (showSheetDropdown && searchSheetName.Length >= 2 && !isSearching && !searchResults.Any())
+                            {
+                                <div class="dropdown-menu show w-100">
+                                    <span class="dropdown-item-text text-muted">Ничего не найдено</span>
+                                </div>
+                            }
+                        </div>
                     </div>
                     <div class="col-md-2">
                         <small class="text-muted d-block">Добавьте детали через кнопку "Детали", затем нажмите "Расчёт"</small>
@@ -989,6 +1031,14 @@
 
     private List<CuttingSource> SCut { get; set; } = new List<CuttingSource>();
     private List<Sheet> availableSheets { get; set; } = new();
+    // === Переменные для автокомплита материалов ===
+    private string searchSheetName = "";
+    private List<Sheet> searchResults = new();
+    private bool showSheetDropdown = false;
+    private bool isSearching = false;
+    private CancellationTokenSource? _searchCts;
+
+
     private List<AvailableServiceDto> availableStoreServices { get; set; } = new();
     private string userId = string.Empty;
 
@@ -2430,6 +2480,63 @@
             // Мгновенно обновляем UI, чтобы новые параметры отобразились справа
             StateHasChanged();
         }
+    }
+
+    private async Task OnSheetSearchInput(ChangeEventArgs e)
+    {
+        searchSheetName = e.Value?.ToString() ?? "";
+
+        // 1. Отменяем предыдущий запрос, если пользователь продолжает печатать
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var currentCts = _searchCts;
+
+        // 2. Если меньше 2 символов - скрываем список
+        if (searchSheetName.Length < 2)
+        {
+            showSheetDropdown = false;
+            searchResults.Clear();
+            return;
+        }
+
+        isSearching = true;
+        StateHasChanged();
+
+        try
+        {
+            // 3. Задержка (debounce) 300 мс
+            await Task.Delay(300, currentCts.Token);
+
+            // 4. Если запрос не был отменен, делаем поиск
+            if (!currentCts.IsCancellationRequested)
+            {
+                searchResults = await SheetService.SearchSheetsByNameAsync(userId, searchSheetName, 20);
+                showSheetDropdown = true;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Игнорируем отмену задачи (пользователь нажал следующую клавишу)
+        }
+        finally
+        {
+            isSearching = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectSheetFromSearch(Sheet sheet)
+    {
+        // Добавляем материал в раскрой
+        await AddSourceToSCut(sheet);
+
+        // Очищаем поле поиска и закрываем список
+        searchSheetName = "";
+        searchResults.Clear();
+        showSheetDropdown = false;
+
+        // Возвращаем фокус на поле поиска штрихкода для удобства
+        await searchInput.FocusAsync();
     }
 
 

@@ -381,6 +381,44 @@ namespace Cutter.Migrations
                     b.ToTable("Stores");
                 });
 
+            modelBuilder.Entity("Cutter.Data.StoreDepartment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("StoreDepartments");
+                });
+
             modelBuilder.Entity("Cutter.Data.StoreItem", b =>
                 {
                     b.Property<Guid>("StoreId")
@@ -388,6 +426,9 @@ namespace Cutter.Migrations
 
                     b.Property<int>("ItemId")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -398,11 +439,19 @@ namespace Cutter.Migrations
                     b.Property<float>("Price")
                         .HasColumnType("real");
 
+                    b.Property<int?>("StoreSubdepartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone");
+
                     b.HasKey("StoreId", "ItemId");
 
                     b.HasIndex("ItemId");
 
                     b.HasIndex("StoreId");
+
+                    b.HasIndex("StoreSubdepartmentId");
 
                     b.ToTable("StoreItems");
                 });
@@ -459,6 +508,120 @@ namespace Cutter.Migrations
                         .IsUnique();
 
                     b.ToTable("StoreServicePrices");
+                });
+
+            modelBuilder.Entity("Cutter.Data.StoreSubdepartment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("StoreDepartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreDepartmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("StoreSubdepartments");
+                });
+
+            modelBuilder.Entity("ImportLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CreatedDepartments")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreatedItems")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreatedSubdepartments")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ErrorsCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ImportDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<int>("ProcessingTimeMs")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SettingsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("SkippedRows")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("TotalRows")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UpdatedItems")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportDate");
+
+                    b.HasIndex("StoreId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ImportLogs");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -672,6 +835,17 @@ namespace Cutter.Migrations
                     b.Navigation("Store");
                 });
 
+            modelBuilder.Entity("Cutter.Data.StoreDepartment", b =>
+                {
+                    b.HasOne("Cutter.Data.Store", "Store")
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("Cutter.Data.StoreItem", b =>
                 {
                     b.HasOne("Cutter.Data.DBModels+Items", "Item")
@@ -686,9 +860,16 @@ namespace Cutter.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Cutter.Data.StoreSubdepartment", "StoreSubdepartment")
+                        .WithMany("StoreItems")
+                        .HasForeignKey("StoreSubdepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Item");
 
                     b.Navigation("Store");
+
+                    b.Navigation("StoreSubdepartment");
                 });
 
             modelBuilder.Entity("Cutter.Data.StoreMaterialCutPrice", b =>
@@ -727,6 +908,35 @@ namespace Cutter.Migrations
                     b.Navigation("Service");
 
                     b.Navigation("Store");
+                });
+
+            modelBuilder.Entity("Cutter.Data.StoreSubdepartment", b =>
+                {
+                    b.HasOne("Cutter.Data.StoreDepartment", "Department")
+                        .WithMany("Subdepartments")
+                        .HasForeignKey("StoreDepartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Department");
+                });
+
+            modelBuilder.Entity("ImportLog", b =>
+                {
+                    b.HasOne("Cutter.Data.Store", "Store")
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Cutter.Data.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Store");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -809,6 +1019,16 @@ namespace Cutter.Migrations
                     b.Navigation("StoreMaterialCutPrices");
 
                     b.Navigation("StoreServicePrices");
+                });
+
+            modelBuilder.Entity("Cutter.Data.StoreDepartment", b =>
+                {
+                    b.Navigation("Subdepartments");
+                });
+
+            modelBuilder.Entity("Cutter.Data.StoreSubdepartment", b =>
+                {
+                    b.Navigation("StoreItems");
                 });
 #pragma warning restore 612, 618
         }

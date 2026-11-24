@@ -16,6 +16,9 @@ namespace Cutter.Data
         public DbSet<StoreServicePrice> StoreServicePrices { get; set; }
         public DbSet<ManagerStore> ManagerStores { get; set; } = null!;
         public DbSet<CuttingConstraintProfile> CuttingConstraintProfiles { get; set; }
+        public DbSet<StoreDepartment> StoreDepartments { get; set; }
+        public DbSet<StoreSubdepartment> StoreSubdepartments { get; set; }
+        public DbSet<ImportLog> ImportLogs { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -134,6 +137,47 @@ namespace Cutter.Data
                       .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasIndex(e => e.StoreId);
+            });
+
+            // StoreDepartment
+            builder.Entity<StoreDepartment>(entity =>
+            {
+                entity.HasIndex(e => new { e.StoreId, e.Code }).IsUnique();
+                entity.HasOne(e => e.Store)
+                      .WithMany()
+                      .HasForeignKey(e => e.StoreId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // StoreSubdepartment
+            builder.Entity<StoreSubdepartment>(entity =>
+            {
+                entity.HasIndex(e => new { e.StoreDepartmentId, e.Code }).IsUnique();
+                entity.HasOne(e => e.Department)
+                      .WithMany(d => d.Subdepartments)
+                      .HasForeignKey(e => e.StoreDepartmentId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // StoreItem
+            builder.Entity<StoreItem>(entity =>
+            {
+                entity.HasOne(e => e.StoreSubdepartment)
+                      .WithMany(d => d.StoreItems)
+                      .HasForeignKey(e => e.StoreSubdepartmentId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            builder.Entity<ImportLog>(entity =>
+            {
+                entity.HasIndex(e => e.StoreId);
+                entity.HasIndex(e => e.ImportDate);
+                entity.HasIndex(e => e.UserId);
+
+                entity.HasOne(e => e.User)
+                      .WithMany()
+                      .HasForeignKey(e => e.UserId)
+                      .OnDelete(DeleteBehavior.SetNull);  // если пользователя удалят — лог останется
             });
 
         }

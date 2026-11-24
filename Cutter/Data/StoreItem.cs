@@ -15,5 +15,11 @@ namespace Cutter.Data
         public float Price { get; set; }
         public bool IsActive { get; set; } = true;
         public int? MinOrderQuantity { get; set; }
+
+        public int? StoreSubdepartmentId { get; set; }
+        public virtual StoreSubdepartment? StoreSubdepartment { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
     }
 }

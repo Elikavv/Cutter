@@ -121,6 +121,95 @@ namespace Cutter.Data
             }
             await context.SaveChangesAsync();
 
+            // === 7. Создаём отделы и подотделы (если нет) ===
+            if (!context.StoreDepartments.Any())
+            {
+                foreach (var store in stores)
+                {
+                    // ОТДЕЛ 02: Столярные изделия
+                    var dept02 = new StoreDepartment
+                    {
+                        StoreId = store.Id,
+                        Code = "02",
+                        Name = "Столярные изделия",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreDepartments.Add(dept02);
+                    await context.SaveChangesAsync();
+
+                    // Подотдел 270
+                    var subdept270 = new StoreSubdepartment
+                    {
+                        StoreDepartmentId = dept02.Id,
+                        Code = "270",
+                        Name = "ОТДЕЛКА ДЕК ПАНЕЛЯМИ",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreSubdepartments.Add(subdept270);
+
+                    // Подотдел 271
+                    var subdept271 = new StoreSubdepartment
+                    {
+                        StoreDepartmentId = dept02.Id,
+                        Code = "271",
+                        Name = "ПРОФИЛИ ПВХ",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreSubdepartments.Add(subdept271);
+
+                    // ОТДЕЛ 14: Хранение
+                    var dept14 = new StoreDepartment
+                    {
+                        StoreId = store.Id,
+                        Code = "14",
+                        Name = "Хранение",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreDepartments.Add(dept14);
+                    await context.SaveChangesAsync();
+
+                    // Подотдел для отдела 14
+                    var subdept140 = new StoreSubdepartment
+                    {
+                        StoreDepartmentId = dept14.Id,
+                        Code = "140",
+                        Name = "СТЕЛЛАЖИ И ПОЛКИ",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreSubdepartments.Add(subdept140);
+
+                    // ОТДЕЛ 15: Отдел кухни
+                    var dept15 = new StoreDepartment
+                    {
+                        StoreId = store.Id,
+                        Code = "15",
+                        Name = "Отдел кухни",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreDepartments.Add(dept15);
+                    await context.SaveChangesAsync();
+
+                    var subdept150 = new StoreSubdepartment
+                    {
+                        StoreDepartmentId = dept15.Id,
+                        Code = "150",
+                        Name = "КУХОННЫЕ МОДУЛИ",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.StoreSubdepartments.Add(subdept150);
+                }
+
+                await context.SaveChangesAsync();
+                Console.WriteLine("✅ Seed-данные отделов загружены.");
+            }
+
             // 4. Создаём администратора, если его еще нет
             /*var adminEmail = "admin@cutter.ru";
             if (!context.Users.Any(u => u.Email == adminEmail))

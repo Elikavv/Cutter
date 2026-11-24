@@ -24,25 +24,65 @@ namespace Cutter.Services
             if (user?.StoreId == null)
                 return new List<Sheet>();
 
-            return await _context.StoreItems
+            // 1. Загружаем из БД (EF Core транслирует это в SQL)
+            var storeItems = await _context.StoreItems
                 .Where(si => si.StoreId == user.StoreId && si.IsActive)
+                .Include(si => si.Item)
+                    .ThenInclude(i => i.MaterialType)
+                        .ThenInclude(mt => mt.StoreMaterialCutPrices)
                 .OrderBy(si => si.Item.Name)
                 .ThenBy(si => si.Item.Length)
                 .ThenBy(si => si.Item.Width)
-                .Select(si => new Sheet
-                {
-                    Name = si.Item.Name,
-                    BarCode = si.Item.BarCode,
-                    SKU = si.Item.SKU,
-                    Length = si.Item.Length,
-                    Width = si.Item.Width,
-                    Depth = si.Item.Depth,
-                    Id = si.Item.Id,
-                    Price = si.Price,
-                    MaterialTypeId = si.Item.MaterialTypeId,
-                    CutPrice = si.Item.MaterialType.StoreMaterialCutPrices.FirstOrDefault(x => x.MaterialTypeId == si.Item.MaterialTypeId).CutPrice,
-                })
                 .ToListAsync();
+
+            // 2. Проецируем в памяти (тут можно использовать ?.)
+            return storeItems.Select(si => new Sheet
+            {
+                Name = si.Item.Name,
+                BarCode = si.Item.BarCode,
+                SKU = si.Item.SKU,
+                Length = si.Item.Length,
+                Width = si.Item.Width,
+                Depth = si.Item.Depth,
+                Id = si.Item.Id,
+                Price = si.Price,
+                MaterialTypeId = si.Item.MaterialTypeId,
+                CutPrice = si.Item.MaterialType?.StoreMaterialCutPrices
+                    .FirstOrDefault(x => x.MaterialTypeId == si.Item.MaterialTypeId)?.CutPrice ?? 0,
+            }).ToList();
+        }
+
+        public async Task<List<Sheet>> SearchSheetsByNameAsync(string userId, string searchTerm, int maxResults = 20)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user?.StoreId == null) return new List<Sheet>();
+
+            // 1. Делаем запрос к БД с фильтром, Include и Take(20)
+            var storeItems = await _context.StoreItems
+                .Where(si => si.StoreId == user.StoreId && si.IsActive)
+                .Include(si => si.Item)
+                    .ThenInclude(i => i.MaterialType)
+                        .ThenInclude(mt => mt.StoreMaterialCutPrices)
+                .Where(si => si.Item.Name.ToLower().Contains(searchTerm.ToLower()))
+                .OrderBy(si => si.Item.Name)
+                .Take(maxResults)
+                .ToListAsync();
+
+            // 2. Проекцию делаем в памяти, чтобы безопасно использовать ?. для CutPrice
+            return storeItems.Select(si => new Sheet
+            {
+                Name = si.Item.Name,
+                BarCode = si.Item.BarCode,
+                SKU = si.Item.SKU,
+                Length = si.Item.Length,
+                Width = si.Item.Width,
+                Depth = si.Item.Depth,
+                Id = si.Item.Id,
+                Price = si.Price,
+                MaterialTypeId = si.Item.MaterialTypeId,
+                CutPrice = si.Item.MaterialType?.StoreMaterialCutPrices
+                    .FirstOrDefault(x => x.MaterialTypeId == si.Item.MaterialTypeId)?.CutPrice ?? 0,
+            }).ToList();
         }
 
         public async Task<List<Sheet>> GetSheetsByIdsAsync(List<int> ids)

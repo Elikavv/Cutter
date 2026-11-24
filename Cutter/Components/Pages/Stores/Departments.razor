@@ -1,0 +1,668 @@
+﻿@page "/store/departments"
+@attribute [Authorize(Roles = "AdminStore, AdminSuper")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Cutter.Services
+@using Cutter.Data
+@using System.Security.Claims
+@inject IStoreDepartmentService DepartmentService
+@inject IStorePricingService PricingService
+@inject IStoreDepartmentService DepartmentService
+@inject AuthenticationStateProvider AuthProvider
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Управление отделами</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 style="color: #0055A4;"> Управление отделами магазина</h2>
+        <button class="btn text-white" style="background-color: #0055A4;" @onclick="OpenDepartmentModal">
+            ➕ Добавить отдел
+        </button>
+    </div>
+
+    <!-- Селектор магазина (только для AdminSuper) -->
+    @if (isAdminSuper)
+    {
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">🏪 Выберите магазин</label>
+                        <select class="form-select" @bind="selectedStoreId" @bind:after="OnStoreChanged">
+                            <option value="">-- Выберите магазин --</option>
+                            @foreach (var store in availableStores)
+                            {
+                                <option value="@store.Id">@store.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Поиск -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <div class="row g-3 align-items-center">
+                <div class="col-md-8">
+                    <input type="text" class="form-control" placeholder=" Поиск по коду или названию отдела/подотдела..."
+                           value="@searchText" @oninput="OnSearchInput" />
+                </div>
+                <div class="col-md-4">
+                    <div class="d-flex gap-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="showInactive" @bind="showInactive" @bind:after="LoadDepartments" />
+                            <label class="form-check-label" for="showInactive">
+                                🗑️ Показывать неактивные
+                            </label>
+                        </div>
+                        <button class="btn btn-outline-secondary" @onclick="LoadDepartments">
+                            🔄 Обновить
+                        </button>
+                    </div>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                <div class="mt-2 text-muted small">
+                    Найдено: @departments.Count отделов
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border" role="status" style="color: #0055A4;">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else if (!isAdminSuper || selectedStoreId.HasValue)
+    {
+        @if (departments.Any())
+        {
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 5%"></th>
+                                <th style="width: 10%">Код</th>
+                                <th style="width: 35%">Название</th>
+                                <th style="width: 10%">Подотделов</th>
+                                <th style="width: 10%">Статус</th>
+                                <th style="width: 30%">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var dept in departments)
+                            {
+                                <tr style="cursor: pointer;" @onclick="() => ToggleDepartment(dept.Id)">
+                                    <td>
+                                        @if (expandedDepartments.Contains(dept.Id))
+                                        {
+                                            <span style="color: #0055A4;">▼</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: #999;">▶</span>
+                                        }
+                                    </td>
+                                    <td><strong>@dept.Code</strong></td>
+                                    <td>@dept.Name</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(searchText))
+                                        {
+                                            // При поиске показываем только найденные подотделы
+                                            <span class="badge bg-warning">@dept.Subdepartments.Count</span>
+                                            <small class="text-muted ms-1">найдено</small>
+                                        }
+                                        else
+                                        {
+                                            // Без поиска показываем общее количество
+                                            <span class="badge bg-primary">@dept.Subdepartments.Count(s => s.IsActive)</span>
+                                            @if (dept.Subdepartments.Any(s => !s.IsActive))
+                                            {
+                                                <small class="text-muted ms-1">(+@dept.Subdepartments.Count(s => !s.IsActive) неакт.)</small>
+                                            }
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (dept.IsActive)
+                                        {
+                                            <span class="badge bg-success">✅ Активен</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">⚠️ Деактивирован</span>
+                                        }
+                                    </td>
+                                    <td @onclick:stopPropagation="true">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button class="btn btn-outline-primary" @onclick="() => EditDepartment(dept)" title="Редактировать">
+                                                ✏️
+                                            </button>
+                                            <button class="btn @(dept.IsActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                    @onclick="() => ToggleDepartmentActive(dept.Id)"
+                                                    title="@(dept.IsActive ? "Деактивировать" : "Активировать")">
+                                                @(dept.IsActive ? "🔒" : "🔓")
+                                            </button>
+                                            <button class="btn btn-outline-danger" @onclick="() => DeleteDepartment(dept.Id)" title="Удалить">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+
+                                <!-- Раскрытые подотделы -->
+                                @if (expandedDepartments.Contains(dept.Id))
+                                {
+                                    <tr>
+                                        <td colspan="6" class="p-0">
+                                            <div class="p-4" style="background-color: #f8f9fa; border-left: 4px solid #F58220;">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h6 class="mb-0" style="color: #F58220;">
+                                                        📂 Подотделы: @dept.Code - @dept.Name
+                                                    </h6>
+                                                    <button class="btn btn-sm text-white" style="background-color: #F58220;"
+                                                            @onclick="() => OpenSubdepartmentModal(dept, null)">
+                                                        ➕ Добавить подотдел
+                                                    </button>
+                                                </div>
+
+                                                @if (dept.Subdepartments.Any())
+                                                {
+                                                    <table class="table table-sm mb-0 bg-white">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th style="width: 15%">Код</th>
+                                                                <th style="width: 45%">Название</th>
+                                                                <th style="width: 10%">Статус</th>
+                                                                <th style="width: 30%">Действия</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var subdept in dept.Subdepartments.OrderBy(s => s.Code))
+                                                            {
+                                                                <tr class="@(IsSubdepartmentMatch(subdept) ? "highlight-match" : "")"
+                                                                    style="@(subdept.IsActive ? "" : "opacity: 0.6;")">
+                                                                    <td><strong>@subdept.Code</strong></td>
+                                                                    <td>@subdept.Name</td>
+                                                                    <td>
+                                                                        @if (subdept.IsActive)
+                                                                        {
+                                                                            <span class="badge bg-success">Активен</span>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span class="badge bg-secondary">Неактивен</span>
+                                                                        }
+                                                                    </td>
+                                                                    <td>
+                                                                        <div class="btn-group btn-group-sm" role="group">
+                                                                            <button class="btn btn-outline-primary"
+                                                                                    @onclick="() => EditSubdepartment(dept, subdept)">
+                                                                                ✏️ Изменить
+                                                                            </button>
+                                                                            <button class="btn @(subdept.IsActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                                                    @onclick="() => ToggleSubdepartmentActive(subdept.Id)">
+                                                                                @(subdept.IsActive ? "🔒" : "🔓")
+                                                                            </button>
+                                                                            <button class="btn btn-outline-danger"
+                                                                                    @onclick="() => DeleteSubdepartment(subdept.Id)"
+                                                                                    title="Удалить">
+                                                                                🗑️
+                                                                            </button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                }
+                                                else
+                                                {
+                                                    <div class="text-center text-muted py-3">
+                                                        Нет подотделов. Нажмите "Добавить подотдел".
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info text-center">
+                @(string.IsNullOrWhiteSpace(searchText) ? "Нет отделов. Нажмите 'Добавить отдел'." : "По вашему запросу ничего не найдено.")
+            </div>
+        }
+    }
+    else
+    {
+        <div class="alert alert-warning text-center">
+            ⚠️ Выберите магазин для просмотра отделов.
+        </div>
+    }
+</div>
+
+<!-- Модальное окно для отдела -->
+@if (showDepartmentModal)
+{
+    <div class="modal d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #0055A4; color: white;">
+                    <h5 class="modal-title">@(editingDepartment?.Id == 0 ? "Новый отдел" : "Редактирование отдела")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseDepartmentModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingDepartment" OnValidSubmit="SaveDepartment">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Код отдела *</label>
+                            <input type="text" class="form-control" @bind="editingDepartment.Code" required maxlength="50" />
+                            <div class="form-text">Например: 02, 14, 15</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Название *</label>
+                            <input type="text" class="form-control" @bind="editingDepartment.Name" required maxlength="200" />
+                            <div class="form-text">Например: Столярные изделия</div>
+                        </div>
+                        <div class="modal-footer px-0 pb-0">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseDepartmentModal">Отмена</button>
+                            <button type="submit" class="btn text-white" style="background-color: #0055A4;">💾 Сохранить</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Модальное окно для подотдела -->
+@if (showSubdepartmentModal)
+{
+    <div class="modal d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #F58220; color: white;">
+                    <h5 class="modal-title">@(editingSubdepartment?.Id == 0 ? "Новый подотдел" : "Редактирование подотдела")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseSubdepartmentModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingSubdepartment" OnValidSubmit="SaveSubdepartment">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Родительский отдел</label>
+                            <input type="text" class="form-control" value="@currentDepartment?.Name (@currentDepartment?.Code)" disabled />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Код подотдела *</label>
+                            <input type="text" class="form-control" @bind="editingSubdepartment.Code" required maxlength="50" />
+                            <div class="form-text">Например: 270 (без названия, название вводится отдельно)</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Название *</label>
+                            <input type="text" class="form-control" @bind="editingSubdepartment.Name" required maxlength="200" />
+                            <div class="form-text">Например: ОТДЕЛКА ДЕК ПАНЕЛЯМИ</div>
+                        </div>
+                        <div class="modal-footer px-0 pb-0">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseSubdepartmentModal">Отмена</button>
+                            <button type="submit" class="btn text-white" style="background-color: #F58220;">💾 Сохранить</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .highlight-match {
+        background-color: #fff9e6 !important;
+        border-left: 3px solid #F58220 !important;
+    }
+</style>
+
+@code {
+    @implements IDisposable
+    private bool isLoading = true;
+    private string? currentUserId;
+    private Guid? currentStoreId;
+    private bool isAdminSuper = false;
+    private Guid? selectedStoreId;
+    private List<Store> availableStores = new();
+    private List<StoreDepartment> departments = new();
+    private HashSet<int> expandedDepartments = new();
+    private string searchText = "";
+    private CancellationTokenSource? _searchCts;
+    private const int SearchDelayMs = 400; // Задержка перед поиском (мс)
+    private const int MinSearchLength = 3; // Минимум символов для автопоиска
+
+    private bool showInactive = false; // Показывать неактивные отделы
+
+    // Модальные окна
+    private bool showDepartmentModal = false;
+    private StoreDepartment? editingDepartment;
+
+    private bool showSubdepartmentModal = false;
+    private StoreSubdepartment? editingSubdepartment;
+    private StoreDepartment? currentDepartment;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(currentUserId))
+        {
+            isLoading = false;
+            return;
+        }
+
+        // Проверяем роль пользователя
+        var roles = authState.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        isAdminSuper = roles.Contains("AdminSuper");
+
+        if (isAdminSuper)
+        {
+            // AdminSuper видит все магазины
+            availableStores = await DepartmentService.GetActiveStoresAsync();
+
+            // Автовыбор первого магазина, если есть
+            if (availableStores.Any())
+            {
+                selectedStoreId = availableStores.First().Id;
+                await LoadDepartments();
+            }
+            else
+            {
+                isLoading = false;
+            }
+        }
+        else
+        {
+            // AdminStore работает только со своим магазином
+            currentStoreId = await PricingService.GetUserStoreIdAsync(currentUserId);
+            selectedStoreId = currentStoreId;
+            await LoadDepartments();
+        }
+    }
+
+    private async Task OnStoreChanged()
+    {
+        if (selectedStoreId.HasValue)
+        {
+            await LoadDepartments();
+        }
+    }
+
+    private async Task LoadDepartments()
+    {
+        if (!selectedStoreId.HasValue) return;
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Передаем includeInactive = showInactive
+            departments = await DepartmentService.GetDepartmentsAsync(selectedStoreId.Value, searchText, showInactive);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка загрузки отделов: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSearchTextChanged()
+    {
+        // Отменяем предыдущий запрос
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var currentCts = _searchCts;
+
+        // Если поле пустое — сбрасываем поиск и загружаем все отделы
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            await LoadDepartments();
+            return;
+        }
+
+        // Если меньше 3 символов — не ищем (оставляем текущие результаты)
+        if (searchText.Length < MinSearchLength)
+        {
+            return;
+        }
+
+        // Ждем задержку (debounce)
+        try
+        {
+            await Task.Delay(SearchDelayMs, currentCts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            // Пользователь продолжил печатать — отменяем этот запрос
+            return;
+        }
+
+        // Проверяем, что токен не отменен
+        if (!currentCts.IsCancellationRequested)
+        {
+            await LoadDepartments();
+        }
+    }
+
+    private void ToggleDepartment(int deptId)
+    {
+        if (expandedDepartments.Contains(deptId))
+        {
+            expandedDepartments.Remove(deptId);
+        }
+        else
+        {
+            expandedDepartments.Add(deptId);
+        }
+        StateHasChanged();
+    }
+
+    // === ОТДЕЛЫ ===
+    private void OpenDepartmentModal()
+    {
+        editingDepartment = new StoreDepartment
+        {
+            StoreId = selectedStoreId ?? currentStoreId ?? Guid.Empty,
+            Code = "",
+            Name = "",
+            IsActive = true
+        };
+        showDepartmentModal = true;
+    }
+
+    private void EditDepartment(StoreDepartment dept)
+    {
+        editingDepartment = new StoreDepartment
+        {
+            Id = dept.Id,
+            StoreId = dept.StoreId,
+            Code = dept.Code,
+            Name = dept.Name,
+            IsActive = dept.IsActive
+        };
+        showDepartmentModal = true;
+    }
+
+    private void CloseDepartmentModal()
+    {
+        showDepartmentModal = false;
+        editingDepartment = null;
+    }
+
+    private async Task SaveDepartment()
+    {
+        if (editingDepartment == null) return;
+
+        try
+        {
+            await DepartmentService.SaveDepartmentAsync(editingDepartment);
+            CloseDepartmentModal();
+            await LoadDepartments();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка сохранения отдела: {ex.Message}");
+        }
+    }
+    
+    private async Task DeleteDepartment(int deptId)
+    {
+        // Подтверждение через JavaScript
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Вы уверены, что хотите удалить этот отдел? Если к нему привязаны товары, отдел будет только деактивирован.");
+
+        if (confirmed)
+        {
+            var success = await DepartmentService.DeleteDepartmentAsync(deptId);
+            if (success)
+            {
+                await LoadDepartments();
+            }
+        }
+    }
+
+    private async Task ToggleDepartmentActive(int deptId)
+    {
+        var dept = departments.FirstOrDefault(d => d.Id == deptId);
+        if (dept != null)
+        {
+            dept.IsActive = !dept.IsActive;
+            await DepartmentService.SaveDepartmentAsync(dept);
+            await LoadDepartments();
+        }
+    }
+
+    // === ПОДОТДЕЛЫ ===
+    private void OpenSubdepartmentModal(StoreDepartment dept, StoreSubdepartment? subdept)
+    {
+        currentDepartment = dept;
+        if (subdept != null)
+        {
+            // Редактирование существующего
+            editingSubdepartment = new StoreSubdepartment
+            {
+                Id = subdept.Id,
+                StoreDepartmentId = dept.Id,
+                Code = subdept.Code,
+                Name = subdept.Name,
+                IsActive = subdept.IsActive
+            };
+        }
+        else
+        {
+            // Создание нового
+            editingSubdepartment = new StoreSubdepartment
+            {
+                StoreDepartmentId = dept.Id,
+                Code = "",
+                Name = "",
+                IsActive = true
+            };
+        }
+        showSubdepartmentModal = true;
+    }
+
+    private void EditSubdepartment(StoreDepartment dept, StoreSubdepartment subdept)
+    {
+        OpenSubdepartmentModal(dept, subdept);
+    }
+
+    private void CloseSubdepartmentModal()
+    {
+        showSubdepartmentModal = false;
+        editingSubdepartment = null;
+        currentDepartment = null;
+    }
+
+    private async Task SaveSubdepartment()
+    {
+        if (editingSubdepartment == null) return;
+
+        try
+        {
+            await DepartmentService.SaveSubdepartmentAsync(editingSubdepartment);
+            CloseSubdepartmentModal();
+            await LoadDepartments();
+            // Оставляем отдел раскрытым после сохранения
+            if (currentDepartment != null)
+            {
+                expandedDepartments.Add(currentDepartment.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка сохранения подотдела: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteSubdepartment(int subdeptId)
+    {
+        // Подтверждение через JavaScript
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Вы уверены, что хотите удалить этот подотдел? Если к нему привязаны товары, подотдел будет только деактивирован.");
+
+        if (confirmed)
+        {
+            var success = await DepartmentService.DeleteSubdepartmentAsync(subdeptId);
+            if (success)
+            {
+                await LoadDepartments();
+            }
+        }
+    }
+
+    private async Task ToggleSubdepartmentActive(int subdeptId)
+    {
+        var subdept = await DepartmentService.GetSubdepartmentByIdAsync(subdeptId);
+        if (subdept != null)
+        {
+            subdept.IsActive = !subdept.IsActive;
+            await DepartmentService.SaveSubdepartmentAsync(subdept);
+            await LoadDepartments();
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString() ?? "";
+        _ = OnSearchTextChanged(); // Запускаем поиск в фоне
+    }
+
+    private bool IsSubdepartmentMatch(StoreSubdepartment subdept)
+    {
+        if (string.IsNullOrWhiteSpace(searchText)) return false;
+
+        var search = searchText.ToLower();
+        return subdept.Code.ToLower().Contains(search) ||
+               subdept.Name.ToLower().Contains(search);
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+}

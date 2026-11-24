@@ -76,6 +76,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStoreAccessService, StoreAccessService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IStoreContextService, StoreContextService>();
+builder.Services.AddScoped<IStoreDepartmentService, StoreDepartmentService>();
 
 builder.Services.AddScoped<ICashierService, CashierService>();
 builder.Services.AddScoped<IStoreAdminService, StoreAdminService>();
@@ -85,6 +86,7 @@ builder.Services.AddScoped<IConstraintProfileService, ConstraintProfileService>(
 builder.Services.AddScoped<IBlankSearchService, BlankSearchService>();
 
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
+builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 
 
 var app = builder.Build();
@@ -194,12 +196,31 @@ app.MapGet("/api/export/store-stats", async (
     [FromQuery] Guid storeId,
     [FromQuery] DateTime startDate,
     [FromQuery] DateTime endDate,
+    [FromQuery] string? departmentIds,
+    [FromQuery] string? subdepartmentIds,
+    [FromQuery] bool groupByDepartment,
     IExcelExportService excelService,
     ILogger<Program> logger) =>
 {
     try
     {
-        var bytes = await excelService.ExportStoreStatisticsAsync(storeId, startDate, endDate);
+        List<int>? deptList = null;
+        if (!string.IsNullOrEmpty(departmentIds))
+        {
+            deptList = departmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s.Trim(), out int v) ? v : (int?)null)
+                .Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        }
+
+        List<int>? subdeptList = null;
+        if (!string.IsNullOrEmpty(subdepartmentIds))
+        {
+            subdeptList = subdepartmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s.Trim(), out int v) ? v : (int?)null)
+                .Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        }
+
+        var bytes = await excelService.ExportStoreStatisticsAsync(storeId, startDate, endDate, deptList, subdeptList, groupByDepartment);
         var fileName = $"Статистика_{startDate:yyyy-MM-dd}_{endDate:yyyy-MM-dd}.xlsx";
 
         return Results.File(

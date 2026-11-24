@@ -5,6 +5,7 @@
 @using Cutter.Services
 @using System.Security.Claims
 @inject IStoreAdminService StoreAdminService
+@inject IStoreStatsService StatAdminService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime JSRuntime
 
@@ -115,6 +116,83 @@
             </div>
         </div>
 
+        <!-- Топ отделов/подотделов -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-bold text-white d-flex justify-content-between align-items-center"
+                 style="background-color: #27AE60;">
+                <span>🏆 Топ отделов по материалам</span>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn @(showDepartments ? "btn-light" : "btn-outline-light")"
+                            @onclick="() => showDepartments = true">
+                        📂 Отделы
+                    </button>
+                    <button type="button" class="btn @(!showDepartments ? "btn-light" : "btn-outline-light")"
+                            @onclick="() => showDepartments = false">
+                        📁 Подотделы
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (showDepartments && deptStats?.TopDepartments.Any() == true)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 60%">Отдел</th>
+                                    <th style="width: 20%; text-align: right;">Кол-во</th>
+                                    <th style="width: 20%; text-align: right;">Сумма</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var dept in deptStats.TopDepartments)
+                                {
+                                    <tr>
+                                        <td class="fw-bold">@dept.DepartmentName</td>
+                                        <td class="text-end"><span class="badge bg-primary">@dept.TotalQuantity</span></td>
+                                        <td class="text-end fw-bold" style="color: #0055A4;">@dept.TotalSum.ToString("N0") ₽</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else if (!showDepartments && deptStats?.TopSubdepartments.Any() == true)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 60%">Подотдел</th>
+                                    <th style="width: 20%; text-align: right;">Кол-во</th>
+                                    <th style="width: 20%; text-align: right;">Сумма</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var subdept in deptStats.TopSubdepartments)
+                                {
+                                    <tr>
+                                        <td>
+                                            <small class="text-muted d-block">@subdept.DepartmentName</small>
+                                            <strong>@subdept.SubdepartmentName</strong>
+                                        </td>
+                                        <td class="text-end"><span class="badge bg-primary">@subdept.TotalQuantity</span></td>
+                                        <td class="text-end fw-bold" style="color: #0055A4;">@subdept.TotalSum.ToString("N0") ₽</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center text-muted py-3">
+                        Нет данных за выбранный период
+                    </div>
+                }
+            </div>
+        </div>
+
         <!-- Графики -->
         <div class="row g-4 mb-4">
             <div class="col-md-7">
@@ -204,6 +282,9 @@
     // Флаг для отслеживания отрисовки графиков
     private bool _chartsReady = false;
 
+    private bool showDepartments = true; // true = отделы, false = подотделы
+    private DepartmentStatsResult? deptStats;
+
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -213,11 +294,21 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // ИСПРАВЛЕНИЕ: вызываем отрисовку, когда данные есть, независимо от firstRender
-        if (dashboardData != null && !_chartsReady)
+        // Вызываем отрисовку только если данные загружены и это не первый рендер пустой страницы
+        if (dashboardData != null && !isLoading)
         {
-            await UpdateCharts();
-            _chartsReady = true;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("updateStoreAdminCharts",
+                    dashboardData.ChartLabels,
+                    dashboardData.ChartQtyData,
+                    dashboardData.PieLabels,
+                    dashboardData.PieCostData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка отрисовки графиков: {ex.Message}");
+            }
         }
     }
 
@@ -232,6 +323,7 @@
         try
         {
             dashboardData = await StoreAdminService.GetDashboardDataAsync(currentUserId, startDate, endDate);
+            deptStats = await StatAdminService.GetDepartmentStatsAsync(currentUserId, startDate, endDate);
         }
         catch (Exception ex)
         {
@@ -290,71 +382,73 @@
         return new MarkupString(sortAsc ? " <span style='color: #0055A4;'>▲</span>" : " <span style='color: #0055A4;'>▼</span>");
     }
 }
-
 <script>
-    (function() {
-        let dailyChartInstance = null;
-        let costChartInstance = null;
+window.updateStoreAdminCharts = function (labels, qtyData, pieLabels, pieCostData) {
+    // ЖЕСТКАЯ ПРОВЕРКА: если элементов нет, выходим без ошибки
+    const canvasDaily = document.getElementById('dailyUsageChart');
+    const canvasCost = document.getElementById('materialCostChart');
 
-        window.updateStoreAdminCharts = function (labels, qtyData, pieLabels, pieCostData) {
-            const colorBlue = '#0055A4';
-            const colorBlueLight = 'rgba(0, 85, 164, 0.7)';
+    if (!canvasDaily || !canvasCost) {
+        console.warn("Графики не найдены в DOM. Пропуск отрисовки.");
+        return;
+    }
 
-            const pieColors = ['#0055A4', '#F58220', '#2C3E50', '#27AE60', '#8E44AD', '#95A5A6'];
+    const colorBlue = '#0055A4';
+    const colorBlueLight = 'rgba(0, 85, 164, 0.7)';
+    const pieColors = ['#0055A4', '#F58220', '#2C3E50', '#27AE60', '#8E44AD', '#95A5A6'];
 
-            if (dailyChartInstance) dailyChartInstance.destroy();
-            if (costChartInstance) costChartInstance.destroy();
+    if (window.dailyChartInstance) window.dailyChartInstance.destroy();
+    if (window.costChartInstance) window.costChartInstance.destroy();
 
-            const ctxDaily = document.getElementById('dailyUsageChart').getContext('2d');
-            dailyChartInstance = new Chart(ctxDaily, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Использовано листов (шт)',
-                        data: qtyData,
-                        backgroundColor: colorBlueLight,
-                        borderColor: colorBlue,
-                        borderWidth: 2,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-                    plugins: { legend: { display: false } }
-                }
-            });
+    const ctxDaily = canvasDaily.getContext('2d');
+    window.dailyChartInstance = new Chart(ctxDaily, {
+        type: 'bar',
+        data: {
+            labels: labels || [],
+            datasets: [{
+                label: 'Использовано листов (шт)',
+                data: qtyData || [],
+                backgroundColor: colorBlueLight,
+                borderColor: colorBlue,
+                borderWidth: 2,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            plugins: { legend: { display: false } }
+        }
+    });
 
-            const ctxCost = document.getElementById('materialCostChart').getContext('2d');
-            costChartInstance = new Chart(ctxCost, {
-                type: 'doughnut',
-                data: {
-                    labels: pieLabels,
-                    datasets: [{
-                        data: pieCostData,
-                        backgroundColor: pieColors.slice(0, pieLabels.length),
-                        borderColor: '#ffffff',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
-                                    return context.label + ': ' + context.parsed.toLocaleString('ru-RU') + ' ₽ (' + percentage + '%)';
-                                }
-                            }
+    const ctxCost = canvasCost.getContext('2d');
+    window.costChartInstance = new Chart(ctxCost, {
+        type: 'doughnut',
+        data: {
+            labels: pieLabels || [],
+            datasets: [{
+                data: pieCostData || [],
+                backgroundColor: pieColors.slice(0, (pieLabels || []).length),
+                borderColor: '#ffffff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                            return context.label + ': ' + context.parsed.toLocaleString('ru-RU') + ' ₽ (' + percentage + '%)';
                         }
                     }
                 }
-            });
-        };
-    })();
+            }
+        }
+    });
+};
 </script>

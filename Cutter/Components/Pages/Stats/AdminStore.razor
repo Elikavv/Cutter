@@ -1,13 +1,15 @@
 ﻿@page "/stats/admin"
 @attribute [Authorize(Roles = "AdminStore, AdminSuper")]
 @rendermode InteractiveServer
-@using Microsoft.AspNetCore.Authorization
-@using Cutter.Services
 @using System.Security.Claims
+@using Cutter.Data
+@using Cutter.Services
+@using Microsoft.AspNetCore.Authorization
 @inject IStoreStatsService StatsService
 @inject IStorePricingService PricingService
+@inject IStoreDepartmentService DepartmentService
 @inject AuthenticationStateProvider AuthProvider
-@inject IJSRuntime JS 
+@inject IJSRuntime JS
 
 <PageTitle>Статистика материалов</PageTitle>
 
@@ -57,7 +59,7 @@
                         <h2 class="mb-0 fw-bold">@statsData.AveragePricePerSheet.ToString("N0") ₽</h2>
                     </div>
                 </div>
-            </div
+            </div>
         </div>
 
         <!-- Панель фильтров -->
@@ -65,7 +67,7 @@
             <div class="card-body">
                 <div class="row g-3 align-items-end">
                     <div class="col-md-5">
-                        <label class="form-label fw-bold small text-muted">ПЕРИод</label>
+                        <label class="form-label fw-bold small text-muted">ПЕРИОД</label>
                         <div class="input-group">
                             <span class="input-group-text bg-light">С</span>
                             <input type="date" class="form-control" @bind="startDate" />
@@ -89,6 +91,73 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Сворачиваемая секция фильтра по отделам -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body py-2">
+                <button class="btn btn-link p-0 text-decoration-none"
+                        @onclick="() => showDeptFilter = !showDeptFilter"
+                        style="color: #0055A4;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                         class="bi bi-chevron-@(showDeptFilter ? "up" : "down") me-1"
+                         viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708" />
+                    </svg>
+                    <strong>Фильтр по отделам и подотделам</strong>
+                </button>
+
+                @if (showDeptFilter)
+                {
+                    <div class="mt-3 border-top pt-3">
+                        <div class="d-flex gap-2 mb-3">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="SelectAllDepts">✅ Выбрать все</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="DeselectAllDepts">❌ Снять все</button>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="groupByDept" @bind="groupByDepartment" @bind:after="LoadData" />
+                            <label class="form-check-label fw-bold text-primary" for="groupByDept">
+                                📊 Группировать по отделам и подотделам (с итогами)
+                            </label>
+                        </div>
+
+                        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; background: #f8f9fa;">
+                            @foreach (var dept in allDepartments)
+                            {
+                                <div class="mb-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                               id="dept_@dept.Id"
+                                               checked="@selectedDepartmentIds.Contains(dept.Id)"
+                                               @onchange="e => ToggleDepartment(dept.Id, e.Value)" />
+                                        <label class="form-check-label fw-bold text-primary" for="dept_@dept.Id">
+                                            📂 @dept.Name
+                                        </label>
+                                    </div>
+
+                                    @if (subdepartmentsByDept.TryGetValue(dept.Id, out var subdepts) && subdepts.Any())
+                                    {
+                                        <div class="ms-4 mt-1">
+                                            @foreach (var subdept in subdepts)
+                                            {
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           id="subdept_@subdept.Id"
+                                                           checked="@selectedSubdepartmentIds.Contains(subdept.Id)"
+                                                           @onchange="e => ToggleSubdepartment(subdept.Id, dept.Id, e.Value)" />
+                                                    <label class="form-check-label text-secondary" for="subdept_@subdept.Id">
+                                                        📁 @subdept.Name
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
         </div>
 
@@ -125,8 +194,42 @@
                                 </td>
                             </tr>
                         }
+                        else if (groupByDepartment)
+                        {
+                            <!-- === РЕЖИМ ГРУППИРОВКИ === -->
+                            @foreach (var group in sortedEntries.GroupBy(x => new { x.DepartmentName, x.SubdepartmentName })
+                                                               .OrderBy(g => g.Key.DepartmentName)
+                                                               .ThenBy(g => g.Key.SubdepartmentName))
+                            {
+                                <!-- Заголовок группы -->
+                                <tr class="table-primary">
+                                    <td colspan="4" class="fw-bold">
+                                        📂 @group.Key.DepartmentName — 📁 @group.Key.SubdepartmentName
+                                    </td>
+                                </tr>
+
+                                <!-- Строки группы -->
+                                @foreach (var entry in group)
+                                {
+                                    <tr>
+                                        <td class="ps-4">@entry.SheetName</td>
+                                        <td class="text-end">@entry.Price.ToString("N0") ₽</td>
+                                        <td class="text-end"><span class="badge bg-primary fs-6">@entry.TotalQuantity</span></td>
+                                        <td class="text-end fw-bold" style="color: #0055A4;">@entry.TotalSum.ToString("N0") ₽</td>
+                                    </tr>
+                                }
+
+                                <!-- Итог по группе -->
+                                <tr class="table-light fw-bold">
+                                    <td colspan="2" class="text-end text-muted">Итого по подотделу:</td>
+                                    <td class="text-end">@group.Sum(x => x.TotalQuantity)</td>
+                                    <td class="text-end" style="color: #F58220;">@group.Sum(x => x.TotalSum).ToString("N0") ₽</td>
+                                </tr>
+                            }
+                        }
                         else
                         {
+                            <!-- === ПЛОСКИЙ СПИСОК (как было) === -->
                             @foreach (var entry in sortedEntries)
                             {
                                 <tr>
@@ -165,6 +268,17 @@
     private string? currentUserId;
     private Guid? currentStoreId;
 
+
+    // === Фильтр отделов ===
+    private bool showDeptFilter = false;
+    private List<StoreDepartment> allDepartments = new();
+    private Dictionary<int, List<StoreSubdepartment>> subdepartmentsByDept = new();
+
+    private HashSet<int> selectedDepartmentIds = new();
+    private HashSet<int> selectedSubdepartmentIds = new();
+
+    private bool groupByDepartment = false; // Флаг группировки по отделам
+
     // Сортировка
     private string sortColumn = "TotalSum"; // По умолчанию сортируем по сумме
     private bool sortAscending = false;     // По умолчанию по убыванию
@@ -176,6 +290,7 @@
         if (!string.IsNullOrEmpty(currentUserId))
         {
             currentStoreId = await PricingService.GetUserStoreIdAsync(currentUserId);
+            await LoadDepartmentsForFilter();
         }
         await LoadData();
     }
@@ -189,7 +304,18 @@
 
         try
         {
-            statsData = await StatsService.GetSheetStatsAsync(currentUserId, startDate, endDate);
+            // ВАЖНО: передаём null только если списки не инициализированы
+            // Если пользователь явно снял все галочки — передаём пустой список
+            var deptIds = allDepartments.Any() ? selectedDepartmentIds.ToList() : null;
+            var subdeptIds = allDepartments.Any() ? selectedSubdepartmentIds.ToList() : null;
+
+            statsData = await StatsService.GetSheetStatsAsync(
+                currentUserId,
+                startDate,
+                endDate,
+                deptIds,
+                subdeptIds
+            );
         }
         catch (Exception ex)
         {
@@ -216,8 +342,13 @@
         startDate = endDate.AddMonths(-1);
         sortColumn = "TotalSum";
         sortAscending = false;
+
+        // Восстанавливаем все галочки
+        SelectAllDepts();
+
         _ = LoadData();
     }
+
 
     private void SortBy(string columnName)
     {
@@ -241,17 +372,17 @@
 
             return sortColumn switch
             {
-                "SheetName" => sortAscending 
-                    ? statsData.Entries.OrderBy(x => x.SheetName).ToList() 
+                "SheetName" => sortAscending
+                    ? statsData.Entries.OrderBy(x => x.SheetName).ToList()
                     : statsData.Entries.OrderByDescending(x => x.SheetName).ToList(),
-                "Price" => sortAscending 
-                    ? statsData.Entries.OrderBy(x => x.Price).ToList() 
+                "Price" => sortAscending
+                    ? statsData.Entries.OrderBy(x => x.Price).ToList()
                     : statsData.Entries.OrderByDescending(x => x.Price).ToList(),
-                "TotalQuantity" => sortAscending 
-                    ? statsData.Entries.OrderBy(x => x.TotalQuantity).ToList() 
+                "TotalQuantity" => sortAscending
+                    ? statsData.Entries.OrderBy(x => x.TotalQuantity).ToList()
                     : statsData.Entries.OrderByDescending(x => x.TotalQuantity).ToList(),
-                "TotalSum" => sortAscending 
-                    ? statsData.Entries.OrderBy(x => x.TotalSum).ToList() 
+                "TotalSum" => sortAscending
+                    ? statsData.Entries.OrderBy(x => x.TotalSum).ToList()
                     : statsData.Entries.OrderByDescending(x => x.TotalSum).ToList(),
                 _ => statsData.Entries.OrderByDescending(x => x.TotalSum).ToList()
             };
@@ -264,11 +395,104 @@
         return new MarkupString(sortAscending ? " <span style='color: #0055A4;'>▲</span>" : " <span style='color: #0055A4;'>▼</span>");
     }
 
+    private async Task LoadDepartmentsForFilter()
+    {
+        if (!currentStoreId.HasValue) return;
+
+        allDepartments = await DepartmentService.GetDepartmentsWithSubdepartmentsAsync(currentStoreId.Value);
+
+        subdepartmentsByDept.Clear();
+        selectedDepartmentIds.Clear();
+        selectedSubdepartmentIds.Clear();
+
+        foreach (var dept in allDepartments)
+        {
+            selectedDepartmentIds.Add(dept.Id);
+            var subdepts = dept.Subdepartments?.Where(sd => sd.IsActive).ToList() ?? new List<StoreSubdepartment>();
+            subdepartmentsByDept[dept.Id] = subdepts;
+
+            foreach (var sd in subdepts)
+            {
+                selectedSubdepartmentIds.Add(sd.Id);
+            }
+        }
+    }
+
+    private void ToggleDepartment(int deptId, object? value)
+    {
+        bool isChecked = value is true;
+        if (isChecked)
+        {
+            selectedDepartmentIds.Add(deptId);
+            if (subdepartmentsByDept.TryGetValue(deptId, out var subdepts))
+            {
+                foreach (var sd in subdepts) selectedSubdepartmentIds.Add(sd.Id);
+            }
+        }
+        else
+        {
+            selectedDepartmentIds.Remove(deptId);
+            if (subdepartmentsByDept.TryGetValue(deptId, out var subdepts))
+            {
+                foreach (var sd in subdepts) selectedSubdepartmentIds.Remove(sd.Id);
+            }
+        }
+    }
+
+    private void ToggleSubdepartment(int subdeptId, int parentDeptId, object? value)
+    {
+        bool isChecked = value is true;
+        if (isChecked)
+        {
+            selectedSubdepartmentIds.Add(subdeptId);
+            selectedDepartmentIds.Add(parentDeptId); // ВАЖНО: автоматически отмечаем родительский отдел
+        }
+        else
+        {
+            selectedSubdepartmentIds.Remove(subdeptId);
+        }
+    }
+
+    private void SelectAllDepts()
+    {
+        selectedDepartmentIds.Clear();
+        selectedSubdepartmentIds.Clear();
+        foreach (var dept in allDepartments)
+        {
+            selectedDepartmentIds.Add(dept.Id);
+            if (subdepartmentsByDept.TryGetValue(dept.Id, out var subdepts))
+            {
+                foreach (var sd in subdepts) selectedSubdepartmentIds.Add(sd.Id);
+            }
+        }
+    }
+
+    private void DeselectAllDepts()
+    {
+        selectedDepartmentIds.Clear();
+        selectedSubdepartmentIds.Clear();
+    }
+
     private async Task ExportToExcel()
     {
         if (!currentStoreId.HasValue) return;
 
-        var url = $"/api/export/store-stats?storeId={currentStoreId}&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}";
+        // Формируем строки через запятую
+        var deptString = selectedDepartmentIds.Any()
+            ? string.Join(",", selectedDepartmentIds)
+            : null;
+        var subdeptString = selectedSubdepartmentIds.Any()
+            ? string.Join(",", selectedSubdepartmentIds)
+            : null;
+
+        var filterString = "";
+        if (!string.IsNullOrEmpty(deptString)) filterString += $"&departmentIds={deptString}";
+        if (!string.IsNullOrEmpty(subdeptString)) filterString += $"&subdepartmentIds={subdeptString}";
+
+        // Передаём флаг группировки в Excel
+        filterString += $"&groupByDepartment={groupByDepartment.ToString().ToLower()}";
+
+        var url = $"/api/export/store-stats?storeId={currentStoreId}&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}{filterString}";
         await JS.InvokeVoidAsync("open", url, "_blank");
     }
 }
